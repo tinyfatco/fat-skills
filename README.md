@@ -1,6 +1,6 @@
 # fat-skills
 
-Platform skills for TinyFat agents. Cloned into container images at build time and loaded via crawdad's `--skills` flag.
+Platform skills for TinyFat agents. Cloned into container images at build time and loaded via troublemaker's `--skills` flag.
 
 ## Skills
 
@@ -11,13 +11,13 @@ Platform skills for TinyFat agents. Cloned into container images at build time a
 
 ## Usage
 
-Skills are loaded by crawdad at startup:
+Skills are loaded by troublemaker at startup:
 
 ```bash
-crawdad --skills /opt/fat-skills --port 3002 /data
+troublemaker --skills /opt/fat-skills --port 3002 /data
 ```
 
-Crawdad's skill loader discovers `SKILL.md` files and injects their descriptions into the agent's system prompt. The agent decides when to use them based on natural language context.
+Troublemaker's skill loader discovers `SKILL.md` files and injects their descriptions into the agent's system prompt. The agent decides when to use them based on natural language context.
 
 ## Priority
 
