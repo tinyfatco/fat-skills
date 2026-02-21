@@ -7,59 +7,62 @@ description: Authenticate the GitHub CLI (gh) and persist the token so it surviv
 
 Authenticate `gh` and persist the token to platform storage so it survives sleep/wake cycles.
 
-## Option 1: Personal Access Token (Recommended)
+## Option 1: Personal Access Token (Fastest)
 
 If the user provides a GitHub PAT:
 
 ```bash
-# Set the token directly
 echo "TOKEN_HERE" | gh auth login --with-token
-
-# Verify it works
 gh auth status
 ```
 
-## Option 2: Device Flow (Interactive)
+## Option 2: Device Flow (Interactive — requires tmux)
 
-If the user wants to do the browser-based OAuth flow:
+The device flow is interactive and needs a persistent session. Run it in tmux:
 
 ```bash
-gh auth login --web
+# Start the login flow in a tmux session
+tmux new-session -d -s gh-login 'gh auth login --web -p https 2>&1 | tee /tmp/gh-login.log'
+
+# Wait a moment for the prompts, then read the output
+sleep 3
+cat /tmp/gh-login.log
 ```
 
-This will print a device code and URL. The user visits the URL in their browser and enters the code.
+The output will contain:
+1. A one-time code (e.g. `ABCD-1234`)
+2. A URL (https://github.com/login/device)
+
+**Tell the user both.** They visit the URL in their browser and enter the code.
+
+After the user confirms they completed the browser flow:
+
+```bash
+# Check if the tmux session finished (login succeeded)
+cat /tmp/gh-login.log
+gh auth status
+```
+
+If `gh auth status` shows authenticated, proceed to persist the token below.
 
 ## After Authentication: Persist the Token
 
-After `gh auth status` confirms success, persist the token so it survives container restarts:
+This step is critical — without it, the token is lost on container restart.
 
 ```bash
-# Extract the current token
 TOKEN=$(gh auth token)
 
-# Persist to platform storage
 curl -s -X PATCH https://tinyfat.com/api/agent/secrets \
   -H "Authorization: Bearer $FAT_TOOLS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"gh_token\": \"$TOKEN\"}"
 ```
 
-If the curl returns `{"ok":true}`, the token is stored. On next container wake, `gh` will be pre-authenticated automatically.
-
-## Verifying Persistence
-
-After persisting, you can confirm the token is stored:
-
-```bash
-# This works now (current session)
-gh auth status
-
-# After a restart, gh will also work because the platform
-# hydrates GH_TOKEN and ~/.config/gh/hosts.yml on boot
-```
+If the curl returns `{"ok":true}`, the token is durably stored. On next container wake, `gh` will be pre-authenticated automatically via `GH_TOKEN` env var and `~/.config/gh/hosts.yml`.
 
 ## Troubleshooting
 
 - **"gh: command not found"** — gh is pre-installed in the container image. This shouldn't happen.
-- **Token not persisting** — Make sure `FAT_TOOLS_TOKEN` is set. Run `echo $FAT_TOOLS_TOKEN` to check.
+- **Token not persisting** — Make sure `FAT_TOOLS_TOKEN` is set: `echo $FAT_TOOLS_TOKEN`
 - **Auth fails after restart** — The persist step may have failed. Re-run the curl command above.
+- **tmux session stuck** — `tmux kill-session -t gh-login` and retry.
