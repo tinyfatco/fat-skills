@@ -289,14 +289,6 @@ google-chrome \
 
 ---
 
-## Example: One-Pager
-
-See `~/code/spellcasters-onepager/` for a complete example:
-- `index.html` — Standalone HTML with inline CSS, `@page` rules, two-column grid layout
-- `generate-pdf.sh` — Shell script wrapper
-
----
-
 ## Serving for Preview
 
 For quick preview before PDF generation:
