@@ -1,0 +1,410 @@
+#!/usr/bin/env node
+/**
+ * yeet — unified agent platform CLI
+ *
+ * One CLI for all platform operations: projects, secrets, contacts.
+ * Authenticates via FAT_TOOLS_TOKEN environment variable.
+ */
+
+const { execSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+
+const DEPLOY_URL = "https://deploy.tinyfat.com";
+const PLATFORM_URL = "https://tinyfat.com";
+
+function getToken() {
+  const token = process.env.FAT_TOOLS_TOKEN;
+  if (!token) {
+    console.error("Error: FAT_TOOLS_TOKEN not set");
+    process.exit(1);
+  }
+  return token;
+}
+
+async function api(url, opts = {}) {
+  const token = getToken();
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    ...opts.headers,
+  };
+  const res = await fetch(url, { ...opts, headers });
+  const text = await res.text();
+  try {
+    return { ok: res.ok, status: res.status, data: JSON.parse(text) };
+  } catch {
+    return { ok: res.ok, status: res.status, data: text };
+  }
+}
+
+// ── project deploy ──────────────────────────────────────────
+
+async function projectDeploy(args) {
+  if (args.length < 1) {
+    console.error("Usage: yeet project deploy <name> [directory]");
+    process.exit(1);
+  }
+  const projectName = args[0];
+  const dir = args[1] || ".";
+
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    console.error(`Error: ${dir} is not a directory`);
+    process.exit(1);
+  }
+
+  // Create tarball
+  const tarball = path.join(os.tmpdir(), `yeet-deploy-${Date.now()}.tar.gz`);
+  try {
+    execSync(`tar -czf "${tarball}" -C "${dir}" .`, { stdio: "pipe" });
+  } catch (err) {
+    console.error("Error creating tarball:", err.message);
+    process.exit(1);
+  }
+
+  const size = fs.statSync(tarball).size;
+  console.log(`Deploying ${dir} to ${projectName} (${(size / 1024).toFixed(0)}KB)...`);
+
+  const body = fs.readFileSync(tarball);
+  fs.unlinkSync(tarball);
+
+  const res = await api(DEPLOY_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/gzip",
+      "X-Project-Name": projectName,
+    },
+    body,
+  });
+
+  if (res.ok && res.data.url) {
+    console.log(`\nDeployed: ${res.data.url}`);
+    if (res.data.project) console.log(`Project:  ${res.data.project}`);
+  } else {
+    console.error("Deploy failed:", res.data.error || res.data);
+    process.exit(1);
+  }
+}
+
+// ── project env ─────────────────────────────────────────────
+
+async function projectEnv(args) {
+  if (args.length < 2) {
+    console.error("Usage: yeet project env <project> set|rm|ls [KEY] [VALUE]");
+    process.exit(1);
+  }
+  const project = args[0];
+  const action = args[1];
+
+  if (action === "ls") {
+    // List env vars — the deploy worker doesn't have a list endpoint yet,
+    // so we inform the user this is a Phase 2 feature
+    console.error("Listing project env vars is not yet supported.");
+    console.error("You can set and remove vars. Use the CF dashboard to view them.");
+    process.exit(1);
+  }
+
+  if (action === "set") {
+    if (args.length < 3) {
+      console.error("Usage: yeet project env <project> set KEY=VALUE");
+      process.exit(1);
+    }
+    // Support KEY=VALUE or KEY VALUE
+    let key, value;
+    if (args[2].includes("=")) {
+      [key, ...rest] = args[2].split("=");
+      value = rest.join("=");
+    } else {
+      key = args[2];
+      value = args[3];
+    }
+    if (!key || value === undefined) {
+      console.error("Usage: yeet project env <project> set KEY=VALUE");
+      process.exit(1);
+    }
+
+    const payload = {
+      project,
+      env: "production",
+      vars: { [key]: { value, type: "secret_text" } },
+    };
+
+    const res = await api(`${DEPLOY_URL}/secret`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok && res.data.success) {
+      console.log(`Set ${key} on ${project} (production)`);
+    } else {
+      console.error("Error:", res.data.error || res.data);
+      process.exit(1);
+    }
+  } else if (action === "rm") {
+    if (args.length < 3) {
+      console.error("Usage: yeet project env <project> rm KEY");
+      process.exit(1);
+    }
+    const key = args[2];
+    const payload = {
+      project,
+      env: "production",
+      vars: { [key]: null },
+    };
+
+    const res = await api(`${DEPLOY_URL}/secret`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok && res.data.success) {
+      console.log(`Removed ${key} from ${project} (production)`);
+    } else {
+      console.error("Error:", res.data.error || res.data);
+      process.exit(1);
+    }
+  } else {
+    console.error(`Unknown action: ${action}`);
+    console.error("Usage: yeet project env <project> set|rm|ls [KEY] [VALUE]");
+    process.exit(1);
+  }
+}
+
+// ── project (router) ────────────────────────────────────────
+
+async function projectCmd(args) {
+  if (args.length === 0) {
+    console.error("Usage: yeet project <deploy|env|ls|init|rm|info> [args]");
+    process.exit(1);
+  }
+  const sub = args[0];
+  const rest = args.slice(1);
+
+  switch (sub) {
+    case "deploy":
+      return projectDeploy(rest);
+    case "env":
+      return projectEnv(rest);
+    case "ls":
+    case "init":
+    case "rm":
+    case "info":
+      console.error(`yeet project ${sub} is coming in Phase 2.`);
+      process.exit(1);
+    default:
+      console.error(`Unknown project command: ${sub}`);
+      process.exit(1);
+  }
+}
+
+// ── secret ──────────────────────────────────────────────────
+
+async function secretCmd(args) {
+  if (args.length === 0) {
+    console.error("Usage: yeet secret ls|set|rm [KEY] [VALUE]");
+    process.exit(1);
+  }
+  const action = args[0];
+
+  if (action === "ls") {
+    // The secrets API doesn't have a list endpoint — secrets are write-only
+    // for security. Agents know what they saved.
+    console.error("Listing secrets is not supported (write-only for security).");
+    console.error("You know what you saved. Check your MEMORY.md for a record.");
+    process.exit(1);
+  }
+
+  if (action === "set") {
+    if (args.length < 2) {
+      console.error("Usage: yeet secret set KEY=VALUE");
+      process.exit(1);
+    }
+    // Support KEY=VALUE or KEY VALUE
+    let key, value;
+    if (args[1].includes("=")) {
+      [key, ...rest] = args[1].split("=");
+      value = rest.join("=");
+    } else {
+      key = args[1];
+      value = args[2];
+    }
+    if (!key || value === undefined) {
+      console.error("Usage: yeet secret set KEY=VALUE");
+      process.exit(1);
+    }
+
+    const res = await api(`${PLATFORM_URL}/api/agent/secrets`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [key]: value }),
+    });
+
+    if (res.ok) {
+      console.log(`Saved secret: ${key}`);
+      console.log("It will be available on next container wake.");
+    } else {
+      console.error("Error:", res.data.error || res.data);
+      process.exit(1);
+    }
+  } else if (action === "rm") {
+    console.error("Secret deletion is not yet supported.");
+    console.error("The secrets API is merge-only. To effectively disable a secret,");
+    console.error("overwrite it: yeet secret set KEY=disabled");
+    process.exit(1);
+  } else {
+    console.error(`Unknown action: ${action}`);
+    console.error("Usage: yeet secret ls|set|rm [KEY] [VALUE]");
+    process.exit(1);
+  }
+}
+
+// ── contact ─────────────────────────────────────────────────
+
+async function contactCmd(args) {
+  if (args.length === 0) {
+    console.error("Usage: yeet contact ls|add|rm [email]");
+    process.exit(1);
+  }
+  const action = args[0];
+
+  if (action === "ls") {
+    const res = await api(`${PLATFORM_URL}/api/agent/contacts`);
+    if (res.ok) {
+      const contacts = Array.isArray(res.data) ? res.data : res.data.contacts || [];
+      if (contacts.length === 0) {
+        console.log("No contacts.");
+      } else {
+        console.log("Contacts:");
+        for (const c of contacts) {
+          const flags = [];
+          if (c.inbound) flags.push("inbound");
+          if (c.outbound) flags.push("outbound");
+          console.log(`  ${c.email}  (${flags.join(", ")})`);
+        }
+      }
+    } else {
+      console.error("Error:", res.data.error || res.data);
+      process.exit(1);
+    }
+  } else if (action === "add") {
+    if (args.length < 2) {
+      console.error("Usage: yeet contact add <email>");
+      process.exit(1);
+    }
+    const email = args[1];
+    const matchType = email.startsWith("@") ? "domain" : "exact";
+
+    const res = await api(`${PLATFORM_URL}/api/agent/contacts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, match_type: matchType }),
+    });
+
+    if (res.ok) {
+      console.log(`Added contact: ${email}`);
+    } else {
+      console.error("Error:", res.data.error || res.data);
+      process.exit(1);
+    }
+  } else if (action === "rm") {
+    if (args.length < 2) {
+      console.error("Usage: yeet contact rm <email>");
+      process.exit(1);
+    }
+    const email = args[1];
+
+    const res = await api(`${PLATFORM_URL}/api/agent/contacts?email=${encodeURIComponent(email)}`, {
+      method: "DELETE",
+    });
+
+    if (res.ok) {
+      console.log(`Removed contact: ${email}`);
+    } else {
+      console.error("Error:", res.data.error || res.data);
+      process.exit(1);
+    }
+  } else {
+    console.error(`Unknown action: ${action}`);
+    console.error("Usage: yeet contact ls|add|rm [email]");
+    process.exit(1);
+  }
+}
+
+// ── who ─────────────────────────────────────────────────────
+
+async function whoCmd() {
+  const token = process.env.FAT_TOOLS_TOKEN;
+  console.log("Agent Platform Status:");
+  console.log(`  FAT_TOOLS_TOKEN: ${token ? "set" : "NOT SET"}`);
+  console.log(`  ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? "set" : "not set"}`);
+  console.log(`  GH_TOKEN: ${process.env.GH_TOKEN ? "set" : "not set"}`);
+  console.log(`  Node: ${process.version}`);
+  console.log(`  Platform: ${PLATFORM_URL}`);
+  console.log(`  Deploy: ${DEPLOY_URL}`);
+}
+
+// ── help ────────────────────────────────────────────────────
+
+function showHelp() {
+  console.log(`yeet — agent platform CLI
+
+Usage: yeet <command> [args]
+
+Project Management:
+  yeet project deploy <name> [dir]     Deploy directory to a CF Pages project
+  yeet project env <name> set K=V      Set env var on a project
+  yeet project env <name> rm KEY       Remove env var from a project
+
+Agent Secrets (persist across sleep):
+  yeet secret set KEY=VALUE            Save a secret
+
+Contacts (email whitelist):
+  yeet contact ls                      List contacts
+  yeet contact add <email>             Add contact (inbound + outbound)
+  yeet contact add @domain.com         Add entire domain
+  yeet contact rm <email>              Remove contact
+
+Other:
+  yeet who                             Show agent status
+  yeet help                            This message
+
+All commands use FAT_TOOLS_TOKEN for authentication.`);
+}
+
+// ── main ────────────────────────────────────────────────────
+
+async function main() {
+  const args = process.argv.slice(2);
+
+  if (args.length === 0 || args[0] === "help" || args[0] === "--help" || args[0] === "-h") {
+    showHelp();
+    process.exit(0);
+  }
+
+  const cmd = args[0];
+  const rest = args.slice(1);
+
+  try {
+    switch (cmd) {
+      case "project":
+        return await projectCmd(rest);
+      case "secret":
+        return await secretCmd(rest);
+      case "contact":
+        return await contactCmd(rest);
+      case "who":
+        return await whoCmd();
+      default:
+        console.error(`Unknown command: ${cmd}`);
+        showHelp();
+        process.exit(1);
+    }
+  } catch (err) {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+main();
