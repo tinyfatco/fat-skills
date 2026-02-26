@@ -438,6 +438,50 @@ async function contactCmd(args) {
   }
 }
 
+// ── task ────────────────────────────────────────────────────
+
+function taskCmd(args) {
+  // Task state lives on R2 mount so it survives container sleep
+  const tdDir = "/data/.td";
+  const env = { ...process.env, TD_DIR: tdDir };
+
+  // Parse -p/--project flag
+  let project = null;
+  const tdArgs = [];
+  for (let i = 0; i < args.length; i++) {
+    if ((args[i] === "-p" || args[i] === "--project") && args[i + 1]) {
+      project = args[i + 1];
+      i++; // skip value
+    } else {
+      tdArgs.push(args[i]);
+    }
+  }
+
+  if (project) {
+    env.TD_PROJECT = project;
+  }
+
+  // Translate yeet shortcuts to td commands
+  const aliases = { ls: "list", add: "create", done: "close" };
+  if (tdArgs[0] && aliases[tdArgs[0]]) {
+    tdArgs[0] = aliases[tdArgs[0]];
+  }
+
+  if (tdArgs.length === 0) {
+    tdArgs.push("list");
+  }
+
+  try {
+    execSync(`td ${tdArgs.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ")}`, {
+      env,
+      stdio: "inherit",
+    });
+  } catch (err) {
+    // td already printed its error, just exit with its code
+    process.exit(err.status || 1);
+  }
+}
+
 // ── who ─────────────────────────────────────────────────────
 
 async function whoCmd() {
@@ -476,6 +520,12 @@ Contacts (email whitelist):
   yeet contact add @domain.com         Add entire domain
   yeet contact rm <email>              Remove contact
 
+Tasks (persist across sleep):
+  yeet task ls [-p <project>]          List tasks
+  yeet task add [-p <project>] "title" Create task
+  yeet task done <id>                  Complete task
+  yeet task <any td command>           Full td CLI pass-through
+
 Other:
   yeet who                             Show agent status
   yeet help                            This message
@@ -506,6 +556,8 @@ async function main() {
         return await contactCmd(rest);
       case "who":
         return await whoCmd();
+      case "task":
+        return taskCmd(rest);
       default:
         console.error(`Unknown command: ${cmd}`);
         showHelp();

@@ -1,6 +1,6 @@
 ---
 name: yeet
-description: Unified platform CLI for managing projects, secrets, contacts, and deployments. Use when you need to deploy a site, save credentials, manage email contacts, or check agent status.
+description: Unified platform CLI for managing projects, secrets, contacts, tasks, and deployments. Use when you need to deploy a site, save credentials, manage email contacts, track tasks, or check agent status.
 ---
 
 # Yeet — Agent Platform CLI
@@ -106,6 +106,46 @@ yeet contact rm person@example.com
 
 You must add someone as a contact before you can email them or they can email you.
 
+## Track Tasks
+
+Tasks persist across container sleep (stored on R2). You can scope tasks to a project or keep them general.
+
+```bash
+# List tasks
+yeet task ls
+
+# List tasks for a specific project
+yeet task ls -p my-dashboard
+
+# Create a task
+yeet task add "Fix the login page"
+yeet task add -p my-dashboard "Add dark mode"
+
+# Complete a task
+yeet task done <id>
+```
+
+`yeet task` is a wrapper around `td` (the task tracker CLI). All `td` commands work through `yeet task`:
+
+```bash
+# Show task details
+yeet task show <id>
+
+# Move task to a status
+yeet task move <id> in-progress
+
+# Add a comment
+yeet task comment <id> "Blocked on API response"
+
+# Create subtasks
+yeet task sub <parent-id> "Subtask title"
+
+# Search tasks
+yeet task search "login"
+```
+
+You can also use `td` directly — just know that `yeet task` points the database at `/data/.td` (durable storage), while bare `td` uses `~/.td` (ephemeral).
+
 ## Check Status
 
 ```bash
@@ -140,6 +180,15 @@ yeet project deploy project ./dist
 ```bash
 yeet contact add newperson@company.com
 # Now you can send them email via send_message
+```
+
+### Track project tasks
+```bash
+yeet task add -p my-dashboard "Build contact form"
+yeet task add -p my-dashboard "Add form validation"
+yeet task ls -p my-dashboard
+# Work on it...
+yeet task done td-a1b2
 ```
 
 ## Reference
