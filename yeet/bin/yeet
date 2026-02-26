@@ -172,27 +172,133 @@ async function projectEnv(args) {
   }
 }
 
+// ── project init ────────────────────────────────────────────
+
+async function projectInit(args) {
+  if (args.length < 1) {
+    console.error("Usage: yeet project init <name>");
+    process.exit(1);
+  }
+  const name = args[0];
+
+  console.log(`Creating project ${name}...`);
+  const res = await api(`${DEPLOY_URL}/init`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project: name }),
+  });
+
+  if (res.ok) {
+    if (res.data.created) {
+      console.log(`Created: ${res.data.project}`);
+    } else {
+      console.log(`Already exists: ${res.data.project}`);
+    }
+    console.log(`URL: https://${res.data.subdomain}`);
+  } else {
+    console.error("Error:", res.data.error || res.data);
+    process.exit(1);
+  }
+}
+
+// ── project ls ──────────────────────────────────────────────
+
+async function projectLs() {
+  const res = await api(`${DEPLOY_URL}/projects`);
+
+  if (res.ok) {
+    const projects = res.data.projects || [];
+    if (projects.length === 0) {
+      console.log("No projects. Create one with: yeet project init <name>");
+    } else {
+      console.log("Projects:");
+      for (const p of projects) {
+        console.log(`  ${p.shortName}  https://${p.subdomain}`);
+      }
+    }
+  } else {
+    console.error("Error:", res.data.error || res.data);
+    process.exit(1);
+  }
+}
+
+// ── project info ────────────────────────────────────────────
+
+async function projectInfo(args) {
+  if (args.length < 1) {
+    console.error("Usage: yeet project info <name>");
+    process.exit(1);
+  }
+  const name = args[0];
+
+  const res = await api(`${DEPLOY_URL}/projects/${encodeURIComponent(name)}`);
+
+  if (res.ok) {
+    console.log(`Project: ${res.data.shortName}`);
+    console.log(`Full name: ${res.data.project}`);
+    console.log(`URL: https://${res.data.subdomain}`);
+    const deploys = res.data.deploys || [];
+    if (deploys.length > 0) {
+      console.log(`\nRecent deploys:`);
+      for (const d of deploys) {
+        const date = new Date(d.created_at).toLocaleString();
+        const branch = d.branch ? ` (${d.branch})` : "";
+        console.log(`  ${date}${branch}  ${d.deployment_url}`);
+      }
+    } else {
+      console.log("\nNo deploys yet. Deploy with: yeet project deploy " + name + " <dir>");
+    }
+  } else {
+    console.error("Error:", res.data.error || res.data);
+    process.exit(1);
+  }
+}
+
+// ── project rm ──────────────────────────────────────────────
+
+async function projectRm(args) {
+  if (args.length < 1) {
+    console.error("Usage: yeet project rm <name>");
+    process.exit(1);
+  }
+  const name = args[0];
+
+  console.log(`Deleting project ${name}...`);
+  const res = await api(`${DEPLOY_URL}/projects/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+
+  if (res.ok) {
+    console.log(`Deleted: ${res.data.project}`);
+  } else {
+    console.error("Error:", res.data.error || res.data);
+    process.exit(1);
+  }
+}
+
 // ── project (router) ────────────────────────────────────────
 
 async function projectCmd(args) {
   if (args.length === 0) {
-    console.error("Usage: yeet project <deploy|env|ls|init|rm|info> [args]");
+    console.error("Usage: yeet project <init|ls|info|deploy|env|rm> [args]");
     process.exit(1);
   }
   const sub = args[0];
   const rest = args.slice(1);
 
   switch (sub) {
+    case "init":
+      return projectInit(rest);
+    case "ls":
+      return projectLs();
+    case "info":
+      return projectInfo(rest);
     case "deploy":
       return projectDeploy(rest);
     case "env":
       return projectEnv(rest);
-    case "ls":
-    case "init":
     case "rm":
-    case "info":
-      console.error(`yeet project ${sub} is coming in Phase 2.`);
-      process.exit(1);
+      return projectRm(rest);
     default:
       console.error(`Unknown project command: ${sub}`);
       process.exit(1);
@@ -353,9 +459,13 @@ function showHelp() {
 Usage: yeet <command> [args]
 
 Project Management:
-  yeet project deploy <name> [dir]     Deploy directory to a CF Pages project
+  yeet project init <name>             Create a new CF Pages project
+  yeet project ls                      List your projects
+  yeet project info <name>             Project details + deploy history
+  yeet project deploy <name> [dir]     Deploy directory to a project
   yeet project env <name> set K=V      Set env var on a project
   yeet project env <name> rm KEY       Remove env var from a project
+  yeet project rm <name>               Delete a project
 
 Agent Secrets (persist across sleep):
   yeet secret set KEY=VALUE            Save a secret

@@ -16,6 +16,24 @@ You manage two kinds of things:
 
 These are different. Your GitHub token is YOUR secret. Your dashboard's Stripe key is that PROJECT's env var.
 
+## Create a Project
+
+```bash
+# Create a new project (CF Pages project, ready for deploys)
+yeet project init my-dashboard
+
+# List your projects
+yeet project ls
+
+# Get project details and deploy history
+yeet project info my-dashboard
+
+# Delete a project
+yeet project rm my-dashboard
+```
+
+`init` creates the project on Cloudflare Pages. You can also skip `init` — `deploy` auto-creates the project on first deploy. Each project gets a URL like `my-dashboard.pages.dev` (prefixed with your agent name).
+
 ## Deploy a Site
 
 ```bash
@@ -26,7 +44,7 @@ yeet project deploy my-dashboard ./build
 yeet project deploy my-dashboard .
 ```
 
-The project is auto-created on first deploy. Subsequent deploys update the same project. Each project gets a URL like `my-dashboard.pages.dev` (prefixed with your agent name).
+Subsequent deploys update the same project.
 
 ## Manage Project Env Vars
 
