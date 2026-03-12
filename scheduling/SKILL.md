@@ -78,6 +78,52 @@ Common channel ID formats:
 - Email: `email-user_domain_com`
 - Web: `web`
 
+## Heartbeat: Autonomous Thinking Sessions
+
+Use the special channelId `_heartbeat` when you want to wake up and **think privately** before deciding whether to act. Heartbeat events don't post to any chat — they give you a silent session where you review context and decide what to do.
+
+```json
+{"type": "periodic", "channelId": "_heartbeat", "text": "Review task list and follow up on anything overdue", "schedule": "0 10 * * 1-5", "timezone": "America/Chicago"}
+```
+
+### When to use `_heartbeat` vs a regular channelId
+
+| Use `_heartbeat` | Use a regular channelId |
+|---|---|
+| You need to think before deciding where (or whether) to send a message | You know exactly which channel should receive the output |
+| The event should check multiple channels and act across them | The event is a reminder or report for one specific conversation |
+| Most firings should be silent (nothing to do) | Every firing should produce visible output |
+
+### What you get in a heartbeat
+
+- **Cross-channel activity summary** — recent messages from all your channels (Telegram, Slack, email, web) are included automatically so you have situational awareness
+- **`send_message` tool** — reach any channel from the heartbeat session. You can send to multiple channels in one heartbeat if warranted
+- **Silent by default** — if nothing needs doing, respond with just `[SILENT]` and no message is posted anywhere
+
+### Heartbeat guidelines
+
+- **Be selective.** Most heartbeats should be silent. Only send messages when there's something worth saying.
+- **Be concise.** When you do reach out, keep it short and purposeful.
+- **Check your context.** Review your task list, memory, and the activity summary before deciding what to do.
+- **Vary your timing.** If you want organic-feeling check-ins, use multiple one-shot events at slightly irregular times rather than a rigid cron.
+
+### Example: Daily autonomous check-in
+
+```bash
+cat > /data/events/daily-checkin.json << 'EOF'
+{"type": "periodic", "channelId": "_heartbeat", "text": "Morning check-in: review tasks, scan channels for anything that needs follow-up, send messages if warranted", "schedule": "0 9 * * 1-5", "timezone": "America/New_York"}
+EOF
+```
+
+### Example: One-shot follow-up
+
+```bash
+TARGET=$(date -u -d '+3 hours' +%Y-%m-%dT%H:%M:%S+00:00)
+cat > /data/events/followup-$(date +%s).json << EOF
+{"type": "one-shot", "channelId": "_heartbeat", "text": "Check if Alex responded to the proposal question. If not, send a gentle nudge on Telegram.", "at": "$TARGET"}
+EOF
+```
+
 ## Cron Format
 
 `minute hour day-of-month month day-of-week`
