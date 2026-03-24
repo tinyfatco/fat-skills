@@ -7,7 +7,7 @@
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-eval $(cat "$SCRIPT_DIR/.env" | grep -v '^#' | sed 's/^/export /')
+[ -f "$SCRIPT_DIR/.env" ] && eval $(cat "$SCRIPT_DIR/.env" | grep -v '^#' | sed 's/^/export /')
 
 REPLACE=false
 NEW_TITLE=""

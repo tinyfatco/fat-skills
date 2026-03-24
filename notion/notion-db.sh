@@ -16,7 +16,7 @@
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export $(cat "$SCRIPT_DIR/.env" | grep -v '^#' | xargs)
+[ -f "$SCRIPT_DIR/.env" ] && export $(cat "$SCRIPT_DIR/.env" | grep -v '^#' | xargs)
 
 DB_ID="$1"
 shift || true
