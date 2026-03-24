@@ -1,0 +1,20 @@
+#!/bin/bash
+# Shadow wrapper for pip — intercepts all invocations, caches delta after mutations.
+REAL=/usr/bin/pip
+SNAPSHOT=/opt/fat-pkg/bin/snapshot-delta.sh
+
+# Fallback: some images have pip3 but not pip
+[[ -x "$REAL" ]] || REAL=/usr/bin/pip3
+
+"$REAL" "$@"
+EXIT_CODE=$?
+
+if [[ $EXIT_CODE -eq 0 ]]; then
+    case "${1:-}" in
+        install|uninstall)
+            PKG_CACHE_TRIGGER="pip $1" "$SNAPSHOT" &
+            ;;
+    esac
+fi
+
+exit $EXIT_CODE

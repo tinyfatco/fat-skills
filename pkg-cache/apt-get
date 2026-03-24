@@ -1,0 +1,19 @@
+#!/bin/bash
+# Shadow wrapper for apt-get — intercepts all invocations, caches delta after mutations.
+REAL=/usr/bin/apt-get
+SNAPSHOT=/opt/fat-pkg/bin/snapshot-delta.sh
+
+# Run the real command, preserving all args, stdin, exit code
+"$REAL" "$@"
+EXIT_CODE=$?
+
+# Only snapshot on success and for mutating subcommands
+if [[ $EXIT_CODE -eq 0 ]]; then
+    case "${1:-}" in
+        install|upgrade|dist-upgrade|remove|purge|autoremove)
+            PKG_CACHE_TRIGGER="apt-get $1" "$SNAPSHOT" &
+            ;;
+    esac
+fi
+
+exit $EXIT_CODE

@@ -1,0 +1,28 @@
+#!/bin/bash
+# Shadow wrapper for npm — only caches delta for global installs.
+# Local npm install (no -g) in /data/ already persists via R2.
+REAL=/usr/local/bin/npm
+SNAPSHOT=/opt/fat-pkg/bin/snapshot-delta.sh
+
+"$REAL" "$@"
+EXIT_CODE=$?
+
+if [[ $EXIT_CODE -eq 0 ]]; then
+    # Check if this was a global operation
+    IS_GLOBAL=false
+    for arg in "$@"; do
+        case "$arg" in
+            -g|--global) IS_GLOBAL=true ;;
+        esac
+    done
+
+    if $IS_GLOBAL; then
+        case "${1:-}" in
+            install|uninstall|update|i|un|up)
+                PKG_CACHE_TRIGGER="npm global $1" "$SNAPSHOT" &
+                ;;
+        esac
+    fi
+fi
+
+exit $EXIT_CODE
