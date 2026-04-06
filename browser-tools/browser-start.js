@@ -43,6 +43,12 @@ function getChromePath() {
 			return p;
 		} catch {}
 	}
+	// Fall back to PATH lookup
+	for (const name of ["google-chrome", "chromium-browser", "chromium"]) {
+		try {
+			return execSync(`which ${name}`, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+		} catch {}
+	}
 	throw new Error("Chrome/Chromium not found");
 }
 
