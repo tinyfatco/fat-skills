@@ -1,162 +1,137 @@
 #!/usr/bin/env node
 
-import { spawn, execSync } from "node:child_process";
+import { spawn, execSync, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import puppeteer from "puppeteer-core";
 
-// Parse arguments
 const args = process.argv.slice(2);
-const useProfile = args.includes("--profile");
-const profileArg = args.find(a => a.startsWith("--profile="));
-const profileName = profileArg ? profileArg.split("=")[1] : "Default";
 const forceRestart = args.includes("--restart");
-const helpFlag = args.includes("--help") || args.includes("-h");
 
-if (helpFlag) {
-	console.log(`Usage: browser-start.js [options]
-
-Options:
-  --profile          Use your Chrome Default profile (cookies, logins)
-  --profile=NAME     Use specific profile by name
-  --restart          Kill existing Chrome and restart
-  -h, --help         Show this help
-
-Examples:
-  browser-start.js                    # Fresh/isolated profile (default)
-  browser-start.js --restart          # Force restart with fresh profile
-  browser-start.js --profile          # Use your Default Chrome profile
-`);
+if (args.includes("--help") || args.includes("-h")) {
+	console.log("Usage: browser-start.js [--restart]");
 	process.exit(0);
 }
 
-const CHROME_PORT = 9222;
-const USER_DATA_DIR = `${process.env.HOME}/.cache/browser-tools`;
+const PORT = 9222;
 
-// Detect Chrome path
-function getChromePath() {
-	if (process.platform === "darwin") {
+function findChrome() {
+	if (process.platform === "darwin")
 		return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+	for (const p of ["/usr/bin/chromium", "/usr/bin/google-chrome", "/usr/bin/chromium-browser"]) {
+		if (existsSync(p)) return p;
 	}
-	const paths = ["/usr/bin/google-chrome", "/usr/bin/chromium-browser", "/usr/bin/chromium"];
-	for (const p of paths) {
-		try {
-			execSync(`test -x ${p}`, { stdio: "ignore" });
-			return p;
-		} catch {}
-	}
-	// Fall back to PATH lookup
-	for (const name of ["google-chrome", "chromium-browser", "chromium"]) {
-		try {
-			return execSync(`which ${name}`, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
-		} catch {}
-	}
-	throw new Error("Chrome/Chromium not found");
+	throw new Error("Chrome not found");
 }
 
-// Check if Chrome is already running and responsive
-async function isChromReady() {
+async function isReady() {
 	try {
-		const browser = await Promise.race([
-			puppeteer.connect({ browserURL: `http://localhost:${CHROME_PORT}`, defaultViewport: null }),
-			new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
+		const b = await Promise.race([
+			puppeteer.connect({ browserURL: "http://localhost:" + PORT, defaultViewport: null }),
+			new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 2000)),
 		]);
-		await browser.disconnect();
+		await b.disconnect();
 		return true;
-	} catch {
-		return false;
-	}
+	} catch { return false; }
 }
 
-// Kill Chrome on our port
-function killChrome() {
+function displayExists(d) {
+	// Check the X11 socket file directly — no xdpyinfo needed
+	const num = d.replace(":", "");
+	return existsSync("/tmp/.X11-unix/X" + num);
+}
+
+function ensureDisplay() {
+	// macOS doesn't use X11
+	if (process.platform === "darwin") return null;
+
+	// Check if current DISPLAY works
+	if (process.env.DISPLAY && displayExists(process.env.DISPLAY)) {
+		return process.env.DISPLAY;
+	}
+	// Probe common displays
+	for (const d of [":99", ":9", ":1", ":0"]) {
+		if (displayExists(d)) return d;
+	}
+	// No display found — start Xvfb if available
 	try {
-		// Only kill chrome using OUR port, not all chrome instances
-		execSync(`pkill -f 'chrome.*--remote-debugging-port=${CHROME_PORT}'`, { stdio: "ignore" });
+		execSync("which Xvfb", { stdio: "ignore" });
+		spawn("Xvfb", [":99", "-screen", "0", "1280x1024x24", "-ac"], {
+			detached: true, stdio: "ignore"
+		}).unref();
+		// Wait for socket to appear
+		for (let i = 0; i < 10; i++) {
+			spawnSync("sleep", ["0.2"]);
+			if (displayExists(":99")) return ":99";
+		}
 	} catch {}
+	// Nothing works — headless
+	return null;
 }
 
-// Main
-async function main() {
-	// If Chrome is already running and we don't want to restart, just verify
-	if (!forceRestart && await isChromReady()) {
-		console.log(`✓ Chrome already running on :${CHROME_PORT}`);
-		process.exit(0);
-	}
-
-	// Kill existing if restarting or if it's hung
-	killChrome();
-	await new Promise(r => setTimeout(r, 1000));
-
-	// Prepare user data directory
-	const userDataDir = useProfile ? `${process.env.HOME}/.config/google-chrome` : USER_DATA_DIR;
-	
-	if (!useProfile) {
-		execSync(`mkdir -p "${USER_DATA_DIR}"`, { stdio: "ignore" });
-	}
-
-	// Detect headless environment (no DISPLAY and no macOS)
-	const isHeadless = process.platform !== "darwin" && !process.env.DISPLAY;
-
-	// Build Chrome args
-	const chromeArgs = [
-		`--remote-debugging-port=${CHROME_PORT}`,
-		`--user-data-dir=${userDataDir}`,
-		"--no-first-run",
-		"--no-sandbox",
-		"--disable-setuid-sandbox",
-		"--disable-background-timer-throttling",
-		"--disable-backgrounding-occluded-windows",
-		"--disable-gpu",
-		"--disable-dev-shm-usage",
-	];
-
-	if (isHeadless) {
-		chromeArgs.push("--headless");
-	}
-
-	if (useProfile) {
-		chromeArgs.push(`--profile-directory=${profileName}`);
-	}
-
-	// Get DISPLAY for Linux
-	const env = { ...process.env };
-	if (process.platform === "linux" && !env.DISPLAY) {
-		// Try common display values
-		for (const display of [":9", ":1", ":0"]) {
-			try {
-				execSync(`DISPLAY=${display} xdpyinfo`, { stdio: "ignore", timeout: 1000 });
-				env.DISPLAY = display;
-				break;
-			} catch {}
-		}
-	}
-
-	// Start Chrome
-	const chromePath = getChromePath();
-	const chrome = spawn(chromePath, chromeArgs, {
-		detached: true,
-		stdio: "ignore",
-		env,
-	});
-	chrome.unref();
-
-	// Wait for Chrome to be ready
-	let ready = false;
-	for (let i = 0; i < 30; i++) {
-		if (await isChromReady()) {
-			ready = true;
-			break;
-		}
-		await new Promise(r => setTimeout(r, 500));
-	}
-
-	if (!ready) {
-		console.error("✗ Failed to start Chrome");
-		console.error("  Try: DISPLAY=:9 browser-start.js --restart");
-		process.exit(1);
-	}
-
-	const profileInfo = useProfile ? ` (profile: ${profileName})` : " (fresh profile)";
-	console.log(`✓ Chrome started on :${CHROME_PORT}${profileInfo}`);
+// Already running?
+if (!forceRestart && await isReady()) {
+	console.log("Chrome already running on :" + PORT);
+	process.exit(0);
 }
 
-main();
+// Kill stale
+try {
+	execSync("pkill -f 'chrome.*--remote-debugging-port=" + PORT + "'", { stdio: "ignore" });
+} catch {}
+await new Promise(r => setTimeout(r, 500));
+
+const display = ensureDisplay();
+const chromePath = findChrome();
+const home = process.env.HOME || "/tmp";
+const userDataDir = home + "/.cache/browser-tools";
+execSync("mkdir -p " + JSON.stringify(userDataDir), { stdio: "ignore" });
+
+const chromeArgs = [
+	"--remote-debugging-port=" + PORT,
+	"--user-data-dir=" + userDataDir,
+	"--no-first-run",
+	"--no-sandbox",
+	"--disable-setuid-sandbox",
+	"--disable-background-timer-throttling",
+	"--disable-backgrounding-occluded-windows",
+	"--disable-gpu",
+	"--disable-dev-shm-usage",
+];
+
+if (!display) {
+	chromeArgs.push("--headless");
+	console.log("No display — using headless mode");
+} else {
+	console.log("Using display " + display);
+}
+
+const env = { ...process.env };
+if (display) env.DISPLAY = display;
+
+const chrome = spawn(chromePath, chromeArgs, {
+	detached: true,
+	stdio: ["ignore", "ignore", "pipe"],
+	env,
+});
+
+let stderr = "";
+chrome.stderr.on("data", (d) => {
+	stderr += d.toString();
+	if (stderr.length > 500) stderr = stderr.slice(-500);
+});
+setTimeout(() => { try { chrome.stderr.destroy(); } catch {} }, 5000);
+chrome.unref();
+
+let ready = false;
+for (let i = 0; i < 20; i++) {
+	if (await isReady()) { ready = true; break; }
+	await new Promise(r => setTimeout(r, 500));
+}
+
+if (!ready) {
+	console.error("Chrome failed to start");
+	if (stderr.trim()) console.error("stderr: " + stderr.trim());
+	process.exit(1);
+}
+
+console.log("Chrome started on :" + PORT + (display ? "" : " (headless)"));
