@@ -82,8 +82,8 @@ await new Promise(r => setTimeout(r, 500));
 
 const display = ensureDisplay();
 const chromePath = findChrome();
-const home = process.env.HOME || "/tmp";
-const userDataDir = home + "/.cache/browser-tools";
+// Chrome thrashes small writes. Keep user-data-dir on local disk, not R2/gocryptfs.
+const userDataDir = "/tmp/browser-tools-profile";
 execSync("mkdir -p " + JSON.stringify(userDataDir), { stdio: "ignore" });
 
 const chromeArgs = [
@@ -117,20 +117,32 @@ const chrome = spawn(chromePath, chromeArgs, {
 let stderr = "";
 chrome.stderr.on("data", (d) => {
 	stderr += d.toString();
-	if (stderr.length > 500) stderr = stderr.slice(-500);
+	if (stderr.length > 4000) stderr = stderr.slice(-4000);
 });
-setTimeout(() => { try { chrome.stderr.destroy(); } catch {} }, 5000);
+
+let exited = false;
+let exitInfo = null;
+chrome.on("exit", (code, signal) => {
+	exited = true;
+	exitInfo = { code, signal };
+});
 chrome.unref();
 
 let ready = false;
-for (let i = 0; i < 20; i++) {
+for (let i = 0; i < 30; i++) {
+	if (exited) break;
 	if (await isReady()) { ready = true; break; }
 	await new Promise(r => setTimeout(r, 500));
 }
 
 if (!ready) {
 	console.error("Chrome failed to start");
-	if (stderr.trim()) console.error("stderr: " + stderr.trim());
+	console.error("chrome path: " + chromePath);
+	console.error("args: " + chromeArgs.join(" "));
+	console.error("display: " + (display || "(headless)"));
+	if (exitInfo) console.error("exit: code=" + exitInfo.code + " signal=" + exitInfo.signal);
+	if (stderr.trim()) console.error("stderr:\n" + stderr.trim());
+	else console.error("stderr: (empty)");
 	process.exit(1);
 }
 
