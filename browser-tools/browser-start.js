@@ -2,7 +2,6 @@
 
 import { spawn, execSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import puppeteer from "puppeteer-core";
 
 const args = process.argv.slice(2);
 const forceRestart = args.includes("--restart");
@@ -24,13 +23,13 @@ function findChrome() {
 }
 
 async function isReady() {
+	// Direct CDP HTTP probe — puppeteer.connect leaves session state that races
+	// on rapid retries. Chrome serves /json/version as soon as the debugger is up.
 	try {
-		const b = await Promise.race([
-			puppeteer.connect({ browserURL: "http://localhost:" + PORT, defaultViewport: null }),
-			new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 2000)),
-		]);
-		await b.disconnect();
-		return true;
+		const res = await fetch("http://localhost:" + PORT + "/json/version", {
+			signal: AbortSignal.timeout(1500),
+		});
+		return res.ok;
 	} catch { return false; }
 }
 
