@@ -86,6 +86,74 @@ async function projectDeploy(args) {
   }
 }
 
+// ── site deploy (Workers for Platforms) ─────────────────────
+
+async function siteDeploy(args) {
+  if (args.length < 1) {
+    console.error("Usage: yeet site deploy <name> [directory] [--preview]");
+    process.exit(1);
+  }
+  const siteName = args[0];
+  const filtered = args.slice(1).filter((arg) => arg !== "--preview" && arg !== "--production");
+  const dir = filtered[0] || ".";
+  const environment = args.includes("--preview") ? "preview" : "production";
+
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    console.error(`Error: ${dir} is not a directory`);
+    process.exit(1);
+  }
+
+  const tarball = path.join(os.tmpdir(), `yeet-site-${Date.now()}.tar.gz`);
+  try {
+    execSync(`tar -czf "${tarball}" -C "${dir}" .`, { stdio: "pipe" });
+  } catch (err) {
+    console.error("Error creating tarball:", err.message);
+    process.exit(1);
+  }
+
+  const size = fs.statSync(tarball).size;
+  console.log(`Publishing ${dir} to TinyFat site ${siteName} (${environment}, ${(size / 1024).toFixed(0)}KB)...`);
+
+  const body = fs.readFileSync(tarball);
+  fs.unlinkSync(tarball);
+
+  const res = await api(`${DEPLOY_URL}/sites/${encodeURIComponent(siteName)}/deploy`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/gzip",
+      "X-Environment": environment,
+    },
+    body,
+  });
+
+  if (res.ok && res.data.url) {
+    console.log(`\nPublished: ${res.data.url}`);
+    if (res.data.site) console.log(`Site:      ${res.data.site}`);
+    if (res.data.namespace) console.log(`Namespace: ${res.data.namespace}`);
+  } else {
+    console.error("Publish failed:", res.data.error || res.data);
+    process.exit(1);
+  }
+}
+
+async function siteCmd(args) {
+  if (args.length === 0) {
+    console.error("Usage: yeet site <deploy> [args]");
+    process.exit(1);
+  }
+  const sub = args[0];
+  const rest = args.slice(1);
+
+  switch (sub) {
+    case "deploy":
+      return siteDeploy(rest);
+    default:
+      console.error(`Unknown site command: ${sub}`);
+      console.error("Usage: yeet site <deploy> [args]");
+      process.exit(1);
+  }
+}
+
 // ── project env ─────────────────────────────────────────────
 
 async function projectEnv(args) {
@@ -503,13 +571,17 @@ function showHelp() {
 Usage: yeet <command> [args]
 
 Project Management:
-  yeet project init <name>             Create a new CF Pages project
+  yeet project init <name>             Create a new CF Pages project (legacy)
   yeet project ls                      List your projects
   yeet project info <name>             Project details + deploy history
-  yeet project deploy <name> [dir]     Deploy directory to a project
+  yeet project deploy <name> [dir]     Deploy directory to a Pages project (legacy)
   yeet project env <name> set K=V      Set env var on a project
   yeet project env <name> rm KEY       Remove env var from a project
   yeet project rm <name>               Delete a project
+
+Site Publishing:
+  yeet site deploy <name> [dir]        Publish static site via Workers for Platforms
+  yeet site deploy <name> [dir] --preview
 
 Agent Secrets (persist across sleep):
   yeet secret set KEY=VALUE            Save a secret
@@ -550,6 +622,8 @@ async function main() {
     switch (cmd) {
       case "project":
         return await projectCmd(rest);
+      case "site":
+        return await siteCmd(rest);
       case "secret":
         return await secretCmd(rest);
       case "contact":

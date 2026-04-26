@@ -9,14 +9,35 @@ One CLI for all platform operations. Authenticated via `FAT_TOOLS_TOKEN`.
 
 ## Concepts
 
-You manage two kinds of things:
+You manage three kinds of things:
 
 - **Your secrets** — credentials YOU need (GitHub tokens, API keys). Persist across container sleep. Set with `yeet secret`.
-- **Project env vars** — credentials your DEPLOYED SITES need (Stripe keys, API tokens for a dashboard). Scoped to a specific project. Set with `yeet project env`.
+- **Sites** — TinyFat-managed websites published through Workers for Platforms. Use `yeet site deploy` for new website-agent work.
+- **Legacy projects** — older Cloudflare Pages projects. Use `yeet project ...` only when you explicitly need the legacy Pages path.
+- **Project env vars** — credentials your DEPLOYED LEGACY PAGES PROJECTS need (Stripe keys, API tokens for a dashboard). Scoped to a specific project. Set with `yeet project env`.
 
-These are different. Your GitHub token is YOUR secret. Your dashboard's Stripe key is that PROJECT's env var.
+These are different. Your GitHub token is YOUR secret. Your dashboard's Stripe key is that PROJECT's env var. A TinyFat-managed customer website is a SITE.
 
-## Create a Project
+## Publish a TinyFat Site (Workers for Platforms)
+
+Use this for current website-agent work.
+
+```bash
+# Publish a static site directory
+yeet site deploy my-business ./public
+
+# Publish the current directory
+yeet site deploy my-business .
+
+# Publish to preview environment
+yeet site deploy my-business ./public --preview
+```
+
+The deploy service creates/updates an isolated user Worker in a Workers for Platforms dispatch namespace and attaches the static assets to it. It returns a live TinyFat dispatch URL.
+
+For a static site, make sure the directory contains an `index.html` file.
+
+## Legacy: Create a Pages Project
 
 ```bash
 # Create a new project (CF Pages project, ready for deploys)
@@ -34,17 +55,17 @@ yeet project rm my-dashboard
 
 `init` creates the project on Cloudflare Pages. You can also skip `init` — `deploy` auto-creates the project on first deploy. Each project gets a URL like `my-dashboard.pages.dev` (prefixed with your agent name).
 
-## Deploy a Site
+## Legacy: Deploy to Cloudflare Pages
 
 ```bash
-# Build your site, then deploy it
+# Build your site, then deploy it to the old Pages path
 yeet project deploy my-dashboard ./build
 
 # Deploy current directory
 yeet project deploy my-dashboard .
 ```
 
-Subsequent deploys update the same project.
+Subsequent deploys update the same Pages project. Prefer `yeet site deploy` for managed customer websites.
 
 ## Manage Project Env Vars
 
@@ -156,13 +177,18 @@ Shows whether your platform token and key env vars are set.
 
 ## Common Workflows
 
-### Deploy a static site
+### Publish a static site
 ```bash
 mkdir -p /workspace/scratch/my-site
 cat > /workspace/scratch/my-site/index.html << 'EOF'
 <!DOCTYPE html>
 <html><body><h1>Hello</h1></body></html>
 EOF
+yeet site deploy my-site /workspace/scratch/my-site
+```
+
+### Legacy Pages deploy
+```bash
 yeet project deploy my-site /workspace/scratch/my-site
 ```
 
@@ -173,7 +199,7 @@ yeet secret set gh_token=ghp_xxxxxxxxxxxx
 export GH_TOKEN=ghp_xxxxxxxxxxxx
 gh repo clone user/project
 cd project && npm run build
-yeet project deploy project ./dist
+yeet site deploy project ./dist
 ```
 
 ### Email someone new
