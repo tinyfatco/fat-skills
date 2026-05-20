@@ -1,21 +1,24 @@
 #!/usr/bin/env node
 
-import { browserRequest, printConfigError, resolveUrl } from "./browser-client.js";
+import { browserRequest, browserSessionRequest, printConfigError, resolveUrl } from "./browser-client.js";
 
 const args = process.argv.slice(2);
 const includeHtml = takeFlag(args, "--html");
+const useSession = takeFlag(args, "--session");
 const help = args.includes("--help") || args.includes("-h");
 const urlArg = args.find((arg) => !arg.startsWith("--"));
 
-if (help || !urlArg) {
-	console.log("Usage: browser-content.js <url> [--html]");
+if (help || (!urlArg && !useSession)) {
+	console.log("Usage: browser-content.js <url> [--html] [--session]");
 	console.log("\nExtracts visible page text and links with Cloudflare Browser Rendering.");
-	process.exit(urlArg ? 0 : 1);
+	process.exit(urlArg || useSession ? 0 : 1);
 }
 
 try {
-	const url = await resolveUrl(urlArg);
-	const page = await browserRequest("content", { url, includeHtml });
+	const url = useSession && !urlArg ? undefined : await resolveUrl(urlArg);
+	const page = await (useSession
+		? browserSessionRequest("content", { url, includeHtml })
+		: browserRequest("content", { url, includeHtml }));
 	console.log(`URL: ${page.url}`);
 	if (page.title) console.log(`Title: ${page.title}`);
 	console.log("");

@@ -13,6 +13,7 @@ try {
 	console.log("Remote browser tools ready");
 	console.log(`API: ${baseUrl}`);
 	console.log("Chrome runs in Cloudflare Browser Rendering; no local Chrome process is started.");
+	console.log("Use browser-session.js start for a stateful tab when a workflow needs continuity.");
 } catch (err) {
 	if (!printConfigError(err)) console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
 	process.exit(1);

@@ -43,6 +43,10 @@ export async function browserRequest(action, payload = {}) {
 	return body;
 }
 
+export async function browserSessionRequest(action, payload = {}) {
+	return browserRequest(`session/${action}`, payload);
+}
+
 export async function readState() {
 	try {
 		return JSON.parse(await readFile(STATE_PATH, "utf8"));

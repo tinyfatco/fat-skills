@@ -2,6 +2,7 @@
 
 import {
 	browserRequest,
+	browserSessionRequest,
 	looksLikeUrl,
 	outputPathOrDefault,
 	printConfigError,
@@ -13,6 +14,7 @@ import {
 const args = process.argv.slice(2);
 const help = args.includes("--help") || args.includes("-h");
 const fullPage = takeFlag(args, "--full-page");
+const useSession = takeFlag(args, "--session");
 const jpeg = takeFlag(args, "--jpeg");
 const webp = takeFlag(args, "--webp");
 const width = takeNumberOption(args, "--width");
@@ -20,16 +22,16 @@ const height = takeNumberOption(args, "--height");
 const positional = args.filter((arg) => !arg.startsWith("--"));
 
 if (help) {
-	console.log("Usage: browser-screenshot.js [url] [output] [--full-page] [--width N] [--height N] [--jpeg|--webp]");
+	console.log("Usage: browser-screenshot.js [url] [output] [--full-page] [--width N] [--height N] [--jpeg|--webp] [--session]");
 	console.log("\nCaptures a screenshot with Cloudflare Browser Rendering.");
 	process.exit(0);
 }
 
 try {
 	const urlArg = looksLikeUrl(positional[0]) ? positional.shift() : undefined;
-	const url = await resolveUrl(urlArg);
+	const url = useSession && !urlArg ? undefined : await resolveUrl(urlArg);
 	const type = jpeg ? "jpeg" : webp ? "webp" : "png";
-	const response = await browserRequest("screenshot", {
+	const response = await (useSession ? browserSessionRequest : browserRequest)("screenshot", {
 		url,
 		fullPage,
 		width,
