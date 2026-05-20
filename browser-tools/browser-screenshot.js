@@ -1,34 +1,61 @@
 #!/usr/bin/env node
 
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import puppeteer from "puppeteer-core";
+import {
+	browserRequest,
+	looksLikeUrl,
+	outputPathOrDefault,
+	printConfigError,
+	resolveUrl,
+	timestampedPath,
+	writeBase64File,
+} from "./browser-client.js";
 
-const b = await Promise.race([
-	puppeteer.connect({
-		browserURL: "http://localhost:9222",
-		defaultViewport: null,
-	}),
-	new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
-]).catch((e) => {
-	console.error("✗ Could not connect to browser:", e.message);
-	console.error("  Run: browser-start.js");
-	process.exit(1);
-});
+const args = process.argv.slice(2);
+const help = args.includes("--help") || args.includes("-h");
+const fullPage = takeFlag(args, "--full-page");
+const jpeg = takeFlag(args, "--jpeg");
+const webp = takeFlag(args, "--webp");
+const width = takeNumberOption(args, "--width");
+const height = takeNumberOption(args, "--height");
+const positional = args.filter((arg) => !arg.startsWith("--"));
 
-const p = (await b.pages()).at(-1);
+if (help) {
+	console.log("Usage: browser-screenshot.js [url] [output] [--full-page] [--width N] [--height N] [--jpeg|--webp]");
+	console.log("\nCaptures a screenshot with Cloudflare Browser Rendering.");
+	process.exit(0);
+}
 
-if (!p) {
-	console.error("✗ No active tab found");
+try {
+	const urlArg = looksLikeUrl(positional[0]) ? positional.shift() : undefined;
+	const url = await resolveUrl(urlArg);
+	const type = jpeg ? "jpeg" : webp ? "webp" : "png";
+	const response = await browserRequest("screenshot", {
+		url,
+		fullPage,
+		width,
+		height,
+		type,
+	});
+	const fallback = timestampedPath("screenshot", response.mimeType);
+	const output = outputPathOrDefault(positional[0], fallback);
+	await writeBase64File(response.dataBase64, output);
+	console.log(output);
+} catch (err) {
+	if (!printConfigError(err)) console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
 	process.exit(1);
 }
 
-const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-const filename = `screenshot-${timestamp}.png`;
-const filepath = join(tmpdir(), filename);
+function takeFlag(args, flag) {
+	const index = args.indexOf(flag);
+	if (index === -1) return false;
+	args.splice(index, 1);
+	return true;
+}
 
-await p.screenshot({ path: filepath });
-
-console.log(filepath);
-
-await b.disconnect();
+function takeNumberOption(args, flag) {
+	const index = args.indexOf(flag);
+	if (index === -1) return undefined;
+	const value = Number(args[index + 1]);
+	args.splice(index, 2);
+	return Number.isFinite(value) ? value : undefined;
+}

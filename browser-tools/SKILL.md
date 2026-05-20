@@ -1,43 +1,44 @@
 ---
 name: browser-tools
-description: Headless Chrome browser automation via CLI. Use when you need to browse the web, take screenshots, extract page content, fill forms, or interact with web pages.
+description: Remote browser automation via TinyFat and Cloudflare Browser Rendering. Use when you need to load public web pages, take screenshots, extract page content, render PDFs, or evaluate JavaScript without starting local Chrome.
 ---
 
 # Browser Tools
 
-Headless Chrome automation via Chrome DevTools Protocol.
+Browser tools run Chrome through TinyFat's Cloudflare Browser Rendering API. They do not start or require local Chromium in the agent container.
 
-## Start Chrome
+## Check Configuration
 
 ```bash
 browser-start.js
 ```
 
-Launches headless Chrome with remote debugging on `:9222`. Auto-detects environment (headless in containers, headed with display). Idempotent — safe to call multiple times.
-
 ## Navigate
 
 ```bash
-browser-nav.js https://example.com --new    # Open in new tab
-browser-nav.js https://example.com          # Navigate current tab
+browser-nav.js https://example.com
 ```
+
+This records an active URL in `/tmp` for subsequent commands. Remote browser sessions are stateless, so each command loads the page fresh.
 
 ## Screenshot
 
 ```bash
 browser-screenshot.js
+browser-screenshot.js https://example.com /tmp/example.png --full-page
+browser-screenshot.js --width 390 --height 844
 ```
 
-Captures current viewport, returns path to PNG file in `/tmp/`.
+Returns the path to a PNG/JPEG/WebP image.
 
 ## Evaluate JavaScript
 
 ```bash
 browser-eval.js 'document.title'
-browser-eval.js 'document.querySelectorAll("a").length'
+browser-eval.js --url https://example.com 'document.querySelectorAll("a").length'
 ```
 
-Execute JavaScript in the active tab. Returns the result.
+Use expressions that can be wrapped in `return (...)`.
 
 ## Extract Page Content
 
@@ -45,48 +46,29 @@ Execute JavaScript in the active tab. Returns the result.
 browser-content.js https://example.com
 ```
 
-Navigate to URL and extract readable content as markdown (Mozilla Readability + Turndown).
+Prints visible page text and a bounded list of links.
 
 ## Search
 
 ```bash
 browser-search.js "query terms"
+browser-search.js "query terms" -n 3 --content
 ```
 
-Google search and extract results.
+## PDF
+
+```bash
+browser-pdf.js https://example.com /tmp/example.pdf
+```
 
 ## Cookies
 
 ```bash
-browser-cookies.js
+browser-cookies.js https://example.com
 ```
 
-Display cookies for the current page.
+Prints `document.cookie`; HttpOnly cookies are not exposed.
 
-## Pick Elements
+## Current Limits
 
-```bash
-browser-pick.js "Click the submit button"
-```
-
-Interactive element picker — returns CSS selectors for selected elements.
-
-## Common Patterns
-
-### Browse and screenshot
-```bash
-browser-start.js
-browser-nav.js https://example.com --new
-browser-screenshot.js
-```
-
-### Fill a form
-```bash
-browser-eval.js 'document.querySelector("input[name=\"email\"]").value = "user@example.com"'
-browser-eval.js 'document.querySelector("button[type=\"submit\"]").click()'
-```
-
-### Extract data from a page
-```bash
-browser-content.js https://example.com/article
-```
+Remote browser tools can load public `http` and `https` URLs. They cannot access an agent container's `localhost`, private network addresses, or keep a long-lived interactive tab. `browser-pick.js` is reserved for a future stateful/live-view slice.

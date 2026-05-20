@@ -1,38 +1,23 @@
 #!/usr/bin/env node
 
-import puppeteer from "puppeteer-core";
+import { printConfigError, setActiveUrl } from "./browser-client.js";
 
-const url = process.argv[2];
-const newTab = process.argv[3] === "--new";
+const args = process.argv.slice(2).filter((arg) => arg !== "--new");
+const url = args[0];
 
-if (!url) {
+if (!url || process.argv.includes("--help") || process.argv.includes("-h")) {
 	console.log("Usage: browser-nav.js <url> [--new]");
+	console.log("\nSets the active URL for subsequent remote browser commands.");
 	console.log("\nExamples:");
-	console.log("  browser-nav.js https://example.com       # Navigate current tab");
-	console.log("  browser-nav.js https://example.com --new # Open in new tab");
-	process.exit(1);
+	console.log("  browser-nav.js https://example.com");
+	console.log("  browser-screenshot.js");
+	process.exit(url ? 0 : 1);
 }
 
-const b = await Promise.race([
-	puppeteer.connect({
-		browserURL: "http://localhost:9222",
-		defaultViewport: null,
-	}),
-	new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
-]).catch((e) => {
-	console.error("✗ Could not connect to browser:", e.message);
-	console.error("  Run: browser-start.js");
+try {
+	const active = await setActiveUrl(url);
+	console.log(`Active browser URL: ${active}`);
+} catch (err) {
+	if (!printConfigError(err)) console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
 	process.exit(1);
-});
-
-if (newTab) {
-	const p = await b.newPage();
-	await p.goto(url, { waitUntil: "domcontentloaded" });
-	console.log("✓ Opened:", url);
-} else {
-	const p = (await b.pages()).at(-1);
-	await p.goto(url, { waitUntil: "domcontentloaded" });
-	console.log("✓ Navigated to:", url);
 }
-
-await b.disconnect();

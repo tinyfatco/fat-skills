@@ -1,35 +1,31 @@
 #!/usr/bin/env node
 
-import puppeteer from "puppeteer-core";
+import { browserRequest, printConfigError, resolveUrl } from "./browser-client.js";
 
-const b = await Promise.race([
-	puppeteer.connect({
-		browserURL: "http://localhost:9222",
-		defaultViewport: null,
-	}),
-	new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
-]).catch((e) => {
-	console.error("✗ Could not connect to browser:", e.message);
-	console.error("  Run: browser-start.js");
-	process.exit(1);
-});
+const args = process.argv.slice(2);
+const help = args.includes("--help") || args.includes("-h");
+const urlArg = args.find((arg) => !arg.startsWith("--"));
 
-const p = (await b.pages()).at(-1);
-
-if (!p) {
-	console.error("✗ No active tab found");
-	process.exit(1);
+if (help) {
+	console.log("Usage: browser-cookies.js [url]");
+	console.log("\nPrints document.cookie for the target URL. HttpOnly cookies are not exposed.");
+	process.exit(0);
 }
 
-const cookies = await p.cookies();
-
-for (const cookie of cookies) {
-	console.log(`${cookie.name}: ${cookie.value}`);
-	console.log(`  domain: ${cookie.domain}`);
-	console.log(`  path: ${cookie.path}`);
-	console.log(`  httpOnly: ${cookie.httpOnly}`);
-	console.log(`  secure: ${cookie.secure}`);
-	console.log("");
+try {
+	const url = await resolveUrl(urlArg);
+	const response = await browserRequest("evaluate", {
+		url,
+		expression: "document.cookie",
+	});
+	if (!response.result) {
+		console.log("(No non-HttpOnly cookies visible to document.cookie)");
+	} else {
+		for (const cookie of String(response.result).split(";").map((part) => part.trim()).filter(Boolean)) {
+			console.log(cookie);
+		}
+	}
+} catch (err) {
+	if (!printConfigError(err)) console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+	process.exit(1);
 }
-
-await b.disconnect();
