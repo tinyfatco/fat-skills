@@ -56,6 +56,11 @@ port such as `4321` for Astro or `5173` for Vite:
 npm run dev -- --port 4321
 ```
 
+The platform exposes previews through short-lived isolated capability origins,
+for example `https://p-...preview.tinyfat.dev/`. Use the URL surfaced by the
+workspace UI or preview tools; do not invent public tunnels or expose container
+ports directly.
+
 Do not use TinyFat reserved ports: `3000`, `3002`, `6080`, `8765`, `9222`, or
 `5900-5999`. Do not bind app previews to `0.0.0.0`.
 
@@ -63,12 +68,9 @@ Do not use TinyFat reserved ports: `3000`, `3002`, `6080`, `8765`, `9222`, or
 
 - Display project files define available displays; do not write a global
   active/current file to switch the human's selected display.
-- The current same-origin canvas preview is sandboxed. Some browser storage,
-  cookie, and same-origin assumptions may behave differently until isolated
-  preview origins are fully enabled.
-- The planned isolated preview origin placeholder is
-  `PREVIEW_ORIGIN_PLACEHOLDER`. Once configured, preview URLs should be
-  short-lived capabilities rather than raw container-local addresses.
+- Preview URLs are short-lived capabilities rather than raw container-local
+  addresses. Treat them as bearer URLs and avoid sharing them outside the
+  workspace session.
 - Remote browser tools can inspect public URLs today. They should inspect
   container previews through the platform preview URL once that capability is
   available, not by trying to load `localhost` directly.
