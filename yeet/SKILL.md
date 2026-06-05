@@ -21,8 +21,8 @@ One CLI for platform operations. Networked commands authenticate with `FAT_TOOLS
 Use this for "make a new site" work.
 
 ```bash
-# Create/select a project name and write yeet.json
-yeet project init my-business
+# Create/select a project name, set the deploy directory, and write yeet.json
+yeet project init my-business public
 
 # Build or write the site. Static deploys must include index.html.
 mkdir -p public
@@ -32,13 +32,13 @@ cat > public/index.html << 'EOF'
 EOF
 
 # Publish to https://my-business.preview.tinyfat.dev/
-yeet project deploy public
+yeet project deploy
 ```
 
-If `yeet.json` already exists, use:
+Run `yeet project deploy` from the directory containing `yeet.json`. If the site files live outside that directory, use the explicit form:
 
 ```bash
-yeet project deploy
+yeet project deploy my-business /absolute/path/to/public
 ```
 
 To change the current project without contacting the deploy API:
@@ -50,7 +50,7 @@ yeet project use new-project-name public
 ## Preview Deploys
 
 ```bash
-yeet project deploy public --preview
+yeet project deploy --preview
 ```
 
 This publishes to `https://<project>-preview.preview.tinyfat.dev/` and keeps the normal project URL untouched.
