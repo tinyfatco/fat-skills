@@ -1,101 +1,109 @@
 ---
 name: yeet
-description: Unified platform CLI for managing projects, secrets, contacts, tasks, and deployments. Use when you need to deploy a site, save credentials, manage email contacts, track tasks, or check agent status.
+description: Unified platform CLI for managing TinyFat site projects, deployments, secrets, contacts, tasks, and status. Use when you need to create or publish a website, save credentials, manage contacts, track tasks, or check agent status.
 ---
 
 # Yeet — Agent Platform CLI
 
-One CLI for all platform operations. Authenticated via `FAT_TOOLS_TOKEN`.
+One CLI for platform operations. Networked commands authenticate with `FAT_TOOLS_TOKEN`.
 
-## Concepts
+## Core Concepts
 
-You manage three kinds of things:
+- **Site projects** are TinyFat-managed websites. They publish through Workers for Platforms and get URLs like `https://my-business.preview.tinyfat.dev/`.
+- **Local project config** lives in `yeet.json`. It stores the current project name and default deploy directory so you can run `yeet project deploy`.
+- **Preview deploys** use `https://my-business-preview.preview.tinyfat.dev/`.
+- **Legacy Pages projects** are the older Cloudflare Pages path. Use `--pages` only when explicitly asked for the old path.
+- **Agent secrets** are credentials you need in your own container. They persist across container sleep.
+- **Project env vars** are currently only for legacy Pages projects.
 
-- **Your secrets** — credentials YOU need (GitHub tokens, API keys). Persist across container sleep. Set with `yeet secret`.
-- **Sites** — TinyFat-managed websites published through Workers for Platforms. Use `yeet site deploy` for new website-agent work.
-- **Legacy projects** — older Cloudflare Pages projects. Use `yeet project ...` only when you explicitly need the legacy Pages path.
-- **Project env vars** — credentials your DEPLOYED LEGACY PAGES PROJECTS need (Stripe keys, API tokens for a dashboard). Scoped to a specific project. Set with `yeet project env`.
+## Create and Publish a TinyFat Website
 
-These are different. Your GitHub token is YOUR secret. Your dashboard's Stripe key is that PROJECT's env var. A TinyFat-managed customer website is a SITE.
-
-## Publish a TinyFat Site (Workers for Platforms)
-
-Use this for current website-agent work.
+Use this for "make a new site" work.
 
 ```bash
-# Publish a static site directory
-yeet site deploy my-business ./public
+# Create/select a project name and write yeet.json
+yeet project init my-business
 
-# Publish the current directory
-yeet site deploy my-business .
+# Build or write the site. Static deploys must include index.html.
+mkdir -p public
+cat > public/index.html << 'EOF'
+<!DOCTYPE html>
+<html><body><h1>Hello</h1></body></html>
+EOF
 
-# Publish to preview environment
-yeet site deploy my-business ./public --preview
+# Publish to https://my-business.preview.tinyfat.dev/
+yeet project deploy public
 ```
 
-The deploy service creates/updates an isolated user Worker in a Workers for Platforms dispatch namespace and attaches the static assets to it. It returns a live TinyFat dispatch URL.
-
-For a static site, make sure the directory contains an `index.html` file.
-
-## Legacy: Create a Pages Project
+If `yeet.json` already exists, use:
 
 ```bash
-# Create a new project (CF Pages project, ready for deploys)
-yeet project init my-dashboard
+yeet project deploy
+```
 
-# List your projects
+To change the current project without contacting the deploy API:
+
+```bash
+yeet project use new-project-name public
+```
+
+## Preview Deploys
+
+```bash
+yeet project deploy public --preview
+```
+
+This publishes to `https://<project>-preview.preview.tinyfat.dev/` and keeps the normal project URL untouched.
+
+## Direct Site Deploy Alias
+
+`yeet site deploy` is a direct alias when you do not want to use `yeet.json`.
+
+```bash
+yeet site deploy my-business public
+yeet site deploy my-business public --preview
+```
+
+## Inspect Site Projects
+
+```bash
 yeet project ls
-
-# Get project details and deploy history
-yeet project info my-dashboard
-
-# Delete a project
-yeet project rm my-dashboard
+yeet project info
+yeet project info my-business
 ```
 
-`init` creates the project on Cloudflare Pages. You can also skip `init` — `deploy` auto-creates the project on first deploy. Each project gets a URL like `my-dashboard.pages.dev` (prefixed with your agent name).
+`info` shows the production URL, preview URL, state, and recent deploys.
 
-## Legacy: Deploy to Cloudflare Pages
+## Legacy Cloudflare Pages
+
+Only use this when asked for the old Pages path.
 
 ```bash
-# Build your site, then deploy it to the old Pages path
-yeet project deploy my-dashboard ./build
-
-# Deploy current directory
-yeet project deploy my-dashboard .
+yeet project init my-dashboard --pages
+yeet project deploy my-dashboard ./build --pages
+yeet project ls --pages
+yeet project info my-dashboard --pages
+yeet project rm my-dashboard --pages
 ```
 
-Subsequent deploys update the same Pages project. Prefer `yeet site deploy` for managed customer websites.
-
-## Manage Project Env Vars
+Legacy Pages env vars:
 
 ```bash
-# Set an env var on a deployed project
 yeet project env my-dashboard set STRIPE_KEY=sk_live_xxx
-yeet project env my-dashboard set API_URL=https://api.example.com
-
-# Remove an env var
 yeet project env my-dashboard rm OLD_KEY
 ```
-
-These are CF Pages environment variables — available to your project's `_worker.js` or build-time config.
 
 ## Save Your Secrets
 
 ```bash
-# Save a credential that persists across sleep
 yeet secret set gh_token=ghp_xxxxxxxxxxxx
 yeet secret set openai_key=sk-xxxxxxxxxxxx
-
-# Generic env var (env_ prefix → becomes env var on boot)
 yeet secret set env_MY_CUSTOM_VAR=some_value
 ```
 
-Secrets are merge-only — you can overwrite a key but not delete it.
+Secrets are encrypted at rest and write-only. You can overwrite a key, but delete is not supported yet.
 
 ### Known Secret Keys
-
-These get special handling on container boot:
 
 | Key | What Happens |
 |-----|-------------|
@@ -103,25 +111,16 @@ These get special handling on container boot:
 | `openai_key` | Sets `OPENAI_API_KEY` env var |
 | `google_api_key` | Sets `GOOGLE_API_KEY` env var |
 | `openrouter_key` | Sets `OPENROUTER_API_KEY` env var |
-| `env_*` (prefix) | Any key starting with `env_` becomes an env var (e.g., `env_MY_KEY` → `MY_KEY`) |
-
-Secrets are encrypted at rest. They're write-only — you can't list them for security.
+| `env_*` | Any key starting with `env_` becomes an env var on boot |
 
 ## Manage Contacts
 
 Control who can email you and who you can email.
 
 ```bash
-# List contacts
 yeet contact ls
-
-# Add a contact (opens both inbound and outbound)
 yeet contact add person@example.com
-
-# Add an entire domain
 yeet contact add @example.com
-
-# Remove a contact
 yeet contact rm person@example.com
 ```
 
@@ -129,43 +128,23 @@ You must add someone as a contact before you can email them or they can email yo
 
 ## Track Tasks
 
-Tasks persist across container sleep (stored on R2). You can scope tasks to a project or keep them general.
+Tasks persist across container sleep in `/data/.td`.
 
 ```bash
-# List tasks
 yeet task ls
-
-# List tasks for a specific project
-yeet task ls -p my-dashboard
-
-# Create a task
-yeet task add "Fix the login page"
-yeet task add -p my-dashboard "Add dark mode"
-
-# Complete a task
+yeet task add "Fix the contact form"
+yeet task add -p my-business "Add mobile nav"
 yeet task done <id>
 ```
 
-`yeet task` is a wrapper around `td` (the task tracker CLI). All `td` commands work through `yeet task`:
+`yeet task` is a wrapper around `td`, so normal `td` commands work:
 
 ```bash
-# Show task details
 yeet task show <id>
-
-# Move task to a status
 yeet task move <id> in-progress
-
-# Add a comment
-yeet task comment <id> "Blocked on API response"
-
-# Create subtasks
-yeet task sub <parent-id> "Subtask title"
-
-# Search tasks
-yeet task search "login"
+yeet task comment <id> "Blocked on customer copy"
+yeet task search "contact"
 ```
-
-You can also use `td` directly — just know that `yeet task` points the database at `/data/.td` (durable storage), while bare `td` uses `~/.td` (ephemeral).
 
 ## Check Status
 
@@ -173,52 +152,4 @@ You can also use `td` directly — just know that `yeet task` points the databas
 yeet who
 ```
 
-Shows whether your platform token and key env vars are set.
-
-## Common Workflows
-
-### Publish a static site
-```bash
-mkdir -p /workspace/scratch/my-site
-cat > /workspace/scratch/my-site/index.html << 'EOF'
-<!DOCTYPE html>
-<html><body><h1>Hello</h1></body></html>
-EOF
-yeet site deploy my-site /workspace/scratch/my-site
-```
-
-### Legacy Pages deploy
-```bash
-yeet project deploy my-site /workspace/scratch/my-site
-```
-
-### Set up GitHub, then deploy from a repo
-```bash
-yeet secret set gh_token=ghp_xxxxxxxxxxxx
-# (token available after next wake, or set GH_TOKEN manually for now)
-export GH_TOKEN=ghp_xxxxxxxxxxxx
-gh repo clone user/project
-cd project && npm run build
-yeet site deploy project ./dist
-```
-
-### Email someone new
-```bash
-yeet contact add newperson@company.com
-# Now you can send them email via send_message
-```
-
-### Track project tasks
-```bash
-yeet task add -p my-dashboard "Build contact form"
-yeet task add -p my-dashboard "Add form validation"
-yeet task ls -p my-dashboard
-# Work on it...
-yeet task done td-a1b2
-```
-
-## Reference
-
-- Platform API: `https://tinyfat.com`
-- Deploy API: `https://deploy.tinyfat.com`
-- All auth via `FAT_TOOLS_TOKEN` (set automatically in your environment)
+Shows token status, key env vars, service URLs, and the current `yeet.json` project when present.
