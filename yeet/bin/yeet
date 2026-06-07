@@ -46,6 +46,99 @@ const PROJECT_KIND_SITE = "site";
 const PROJECT_KIND_PAGES = "legacy-pages";
 const PROJECT_NAME_MAX = 55;
 const PREVIEW_APEX = "preview.tinyfat.dev";
+const DATA_DIR = process.env.YEET_DATA_DIR || "/data";
+const PROJECTS_ROOT = process.env.YEET_PROJECTS_DIR || (
+  fs.existsSync(DATA_DIR) ? path.join(DATA_DIR, "projects") : path.join(process.cwd(), "projects")
+);
+const WORKSPACE_DEPLOY_DIR = "site";
+
+function projectWorkspaceDir(projectName) {
+  return path.join(PROJECTS_ROOT, cleanProjectName(projectName));
+}
+
+function ensureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function writeFileIfMissing(file, contents) {
+  if (!fs.existsSync(file)) {
+    fs.writeFileSync(file, contents);
+  }
+}
+
+function projectBriefTemplate(projectName, site = {}) {
+  const url = site.production_url || site.preview_url || siteUrlFor(projectName, "production");
+  const state = site.state || "preview";
+  return [
+    `# ${projectName}`,
+    "",
+    `Slug: ${projectName}`,
+    `State: ${state}`,
+    `Canonical preview: ${url}`,
+    "",
+    "## Brief",
+    "",
+    "TBD",
+    "",
+    "## Current Notes",
+    "",
+    "- Source lives in `site/`.",
+    "- Deploy from this directory with `yeet project deploy`.",
+    "",
+  ].join("\n");
+}
+
+function ensureProjectWorkspace(projectName, site = {}) {
+  const name = cleanProjectName(projectName);
+  const workspaceDir = projectWorkspaceDir(name);
+  const sourceDir = path.join(workspaceDir, WORKSPACE_DEPLOY_DIR);
+  const threadsDir = path.join(workspaceDir, "threads");
+
+  ensureDir(sourceDir);
+  ensureDir(threadsDir);
+  writeFileIfMissing(path.join(workspaceDir, "PROJECT.md"), projectBriefTemplate(name, site));
+  writeFileIfMissing(path.join(workspaceDir, "tasks.md"), `# ${name} Tasks\n\n`);
+  writeFileIfMissing(path.join(workspaceDir, "deploys.jsonl"), "");
+  writeFileIfMissing(path.join(threadsDir, "default.jsonl"), "");
+
+  writeProjectConfig({
+    name,
+    kind: PROJECT_KIND_SITE,
+    deployDir: WORKSPACE_DEPLOY_DIR,
+    workspace: {
+      root: workspaceDir,
+      sourceDir: WORKSPACE_DEPLOY_DIR,
+      projectFile: "PROJECT.md",
+      threadsDir: "threads",
+      deployLog: "deploys.jsonl",
+      tasksFile: "tasks.md",
+    },
+    updatedAt: new Date().toISOString(),
+  }, workspaceDir);
+
+  return { workspaceDir, sourceDir, deployDir: WORKSPACE_DEPLOY_DIR };
+}
+
+function conventionalDeployDir(projectName) {
+  const sourceDir = path.join(projectWorkspaceDir(projectName), WORKSPACE_DEPLOY_DIR);
+  return isDirectory(sourceDir) ? sourceDir : null;
+}
+
+function recordProjectDeployment(projectName, environment, data) {
+  const workspaceDir = projectWorkspaceDir(projectName);
+  const logFile = path.join(workspaceDir, "deploys.jsonl");
+  if (!fs.existsSync(logFile)) return;
+
+  const row = {
+    at: new Date().toISOString(),
+    environment,
+    url: data.url || null,
+    deploymentId: data.deploymentId || data.deployment?.id || null,
+    state: data.deployment?.state || null,
+    files: data.files || null,
+  };
+  fs.appendFileSync(logFile, `${JSON.stringify(row)}\n`);
+}
 
 function splitFlags(args) {
   const flags = new Set();
@@ -159,8 +252,13 @@ function resolveProjectDeploy(args) {
     process.exit(1);
   }
 
+  const cleanName = cleanProjectName(projectName);
+  if (!legacyPages && positional.length === 1 && !isDirectory(positional[0]) && !config?.name) {
+    dir = conventionalDeployDir(cleanName) || dir;
+  }
+
   return {
-    projectName: cleanProjectName(projectName),
+    projectName: cleanName,
     dir,
     environment,
     legacyPages,
@@ -181,6 +279,7 @@ async function deploySiteProject(projectName, dir, environment = "production") {
   });
 
   if (res.ok && res.data.url) {
+    recordProjectDeployment(projectName, environment, res.data);
     console.log(`\nPublished: ${res.data.url}`);
     if (res.data.site) console.log(`Project:   ${res.data.site}`);
     if (res.data.namespace) console.log(`Namespace: ${res.data.namespace}`);
@@ -350,8 +449,21 @@ function projectUse(args) {
   }
 
   const name = cleanProjectName(positional[0]);
+  const explicitDeployDir = positional.length >= 2;
   const deployDir = positional[1] || ".";
   const kind = flags.has("--pages") ? PROJECT_KIND_PAGES : PROJECT_KIND_SITE;
+
+  if (kind === PROJECT_KIND_SITE && !explicitDeployDir) {
+    const workspace = ensureProjectWorkspace(name);
+    console.log(`Project:   ${name}`);
+    console.log(`Workspace: ${workspace.workspaceDir}`);
+    console.log(`Config:    ${path.join(workspace.workspaceDir, PROJECT_FILE)}`);
+    console.log(`URL:       ${siteUrlFor(name, "production")}`);
+    console.log(`Deploy dir: ${workspace.deployDir}`);
+    console.log("Deploy:    cd " + workspace.workspaceDir + " && yeet project deploy");
+    return;
+  }
+
   writeProjectConfig({
     name,
     kind,
@@ -384,6 +496,7 @@ async function projectInit(args) {
   }
 
   const name = cleanProjectName(positional[0]);
+  const explicitDeployDir = positional.length >= 2;
   const deployDir = positional[1] || ".";
   console.log(`Creating TinyFat site project ${name}...`);
   const res = await api(SITES_PUBLISH_URL, {
@@ -395,6 +508,18 @@ async function projectInit(args) {
   if (!res.ok) {
     console.error("Error:", res.data.error || res.data);
     process.exit(1);
+  }
+
+  if (!explicitDeployDir) {
+    const workspace = ensureProjectWorkspace(name, res.data.site || {});
+    console.log(res.data.created === false ? `Already exists: ${name}` : `Created: ${name}`);
+    console.log(`Workspace: ${workspace.workspaceDir}`);
+    console.log(`Config:    ${path.join(workspace.workspaceDir, PROJECT_FILE)}`);
+    console.log(`URL:       ${res.data.site?.production_url || siteUrlFor(name, "production")}`);
+    console.log(`Preview:   ${res.data.site?.preview_url || siteUrlFor(name, "preview")}`);
+    console.log(`Deploy dir: ${workspace.deployDir}`);
+    console.log("Deploy:    cd " + workspace.workspaceDir + " && yeet project deploy");
+    return;
   }
 
   writeProjectConfig({

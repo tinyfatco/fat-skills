@@ -10,7 +10,8 @@ One CLI for platform operations. Networked commands authenticate with `FAT_TOOLS
 ## Core Concepts
 
 - **Site projects** are TinyFat-managed websites. They publish through Workers for Platforms and get URLs like `https://my-business.preview.tinyfat.dev/`.
-- **Local project config** lives in `yeet.json`. It stores the current project name and default deploy directory so you can run `yeet project deploy`.
+- **Project workspaces** live at `/data/projects/<slug>/` when you run `yeet project init <slug>` or `yeet project use <slug>` without an explicit deploy directory.
+- **Local project config** lives in `yeet.json`. In a standard workspace, it is `/data/projects/<slug>/yeet.json` and deploys `site/`.
 - **Preview deploys** use `https://my-business-preview.preview.tinyfat.dev/`.
 - **Legacy Pages projects** are the older Cloudflare Pages path. Use `--pages` only when explicitly asked for the old path.
 - **Agent secrets** are credentials you need in your own container. They persist across container sleep.
@@ -21,12 +22,12 @@ One CLI for platform operations. Networked commands authenticate with `FAT_TOOLS
 Use this for "make a new site" work.
 
 ```bash
-# Create/select a project name, set the deploy directory, and write yeet.json
-yeet project init my-business public
+# Create/select a project workspace at /data/projects/my-business
+yeet project init my-business
+cd /data/projects/my-business
 
 # Build or write the site. Static deploys must include index.html.
-mkdir -p public
-cat > public/index.html << 'EOF'
+cat > site/index.html << 'EOF'
 <!DOCTYPE html>
 <html><body><h1>Hello</h1></body></html>
 EOF
@@ -41,7 +42,14 @@ Run `yeet project deploy` from the directory containing `yeet.json`. If the site
 yeet project deploy my-business /absolute/path/to/public
 ```
 
-To change the current project without contacting the deploy API:
+To open/create the standard workspace for an existing project without contacting the deploy API:
+
+```bash
+yeet project use new-project-name
+cd /data/projects/new-project-name
+```
+
+To use a one-off deploy directory instead of the standard workspace:
 
 ```bash
 yeet project use new-project-name public
