@@ -638,11 +638,83 @@ async function projectInfo(args) {
     console.log("\nRecent deploys:");
     for (const d of deploys.data.deployments) {
       const date = new Date(d.deployed_at || d.created_at).toLocaleString();
-      console.log(`  ${date}  ${d.environment}  ${d.state}  ${d.deployment_url}`);
+      const ready = d.metadata?.bundleKey ? "rollback-ready" : "history-only";
+      console.log(`  ${date}  ${d.environment}  ${d.state}  ${ready}  ${d.id}  ${d.deployment_url}`);
     }
   } else {
     console.log("\nNo deploys yet. Deploy with: yeet project deploy");
   }
+}
+
+function deploymentHasBundle(deploy) {
+  return Boolean(deploy?.metadata?.bundleKey);
+}
+
+async function chooseDeploymentForAction(projectName, action, explicitDeploymentId) {
+  if (explicitDeploymentId) return explicitDeploymentId;
+
+  const deploys = await api(`${SITES_PUBLISH_URL}/${encodeURIComponent(projectName)}/deployments`);
+  if (!deploys.ok) {
+    console.error("Error:", deploys.data.error || deploys.data);
+    process.exit(1);
+  }
+
+  const rows = deploys.data.deployments || [];
+  const candidate = rows.find((deploy) => {
+    if (!deploymentHasBundle(deploy)) return false;
+    if (deploy.state === "failed" || deploy.state === "in_progress") return false;
+    if (action === "promote") return deploy.environment === "preview";
+    return deploy.state !== "live" && deploy.state !== "preview";
+  });
+
+  if (!candidate) {
+    console.error(action === "promote"
+      ? "No rollback-ready preview deploy found. Run `yeet project deploy --preview` first."
+      : "No previous rollback-ready deploy found. Run `yeet project info` to inspect deploy history.");
+    process.exit(1);
+  }
+
+  return candidate.id;
+}
+
+async function projectDeploymentAction(args, action) {
+  const { positional } = splitFlags(args);
+  const config = readProjectConfig();
+  const projectName = cleanProjectName(positional[0] || config?.name || "");
+  const deploymentId = positional[1];
+
+  if (!projectName) {
+    console.error(`Usage: yeet project ${action} [project] [deployment-id]`);
+    console.error("First run: yeet project init <name>");
+    process.exit(1);
+  }
+
+  const targetDeploymentId = await chooseDeploymentForAction(projectName, action, deploymentId);
+  const res = await api(`${SITES_PUBLISH_URL}/${encodeURIComponent(projectName)}/deployments/${encodeURIComponent(targetDeploymentId)}/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+
+  if (res.ok && res.data.url) {
+    recordProjectDeployment(projectName, res.data.environment || "production", res.data);
+    const label = action === "promote" ? "Promoted" : "Rolled back";
+    console.log(`\n${label}: ${res.data.url}`);
+    if (res.data.sourceDeploymentId) console.log(`Source:  ${res.data.sourceDeploymentId}`);
+    if (res.data.deployment?.id) console.log(`Deploy:  ${res.data.deployment.id}`);
+    return;
+  }
+
+  console.error(`${action === "promote" ? "Promote" : "Rollback"} failed:`, res.data.error || res.data);
+  process.exit(1);
+}
+
+async function projectRollback(args) {
+  return projectDeploymentAction(args, "rollback");
+}
+
+async function projectPromote(args) {
+  return projectDeploymentAction(args, "promote");
 }
 
 async function legacyProjectInfo(name) {
@@ -701,7 +773,7 @@ async function projectRm(args) {
 
 async function projectCmd(args) {
   if (args.length === 0) {
-    console.error("Usage: yeet project <init|use|ls|info|deploy|env|rm> [args]");
+    console.error("Usage: yeet project <init|use|ls|info|deploy|rollback|promote|env|rm> [args]");
     process.exit(1);
   }
   const sub = args[0];
@@ -718,6 +790,10 @@ async function projectCmd(args) {
       return projectInfo(rest);
     case "deploy":
       return projectDeploy(rest);
+    case "rollback":
+      return projectRollback(rest);
+    case "promote":
+      return projectPromote(rest);
     case "env":
       return projectEnv(rest);
     case "rm":
@@ -936,6 +1012,8 @@ Site Projects:
   yeet project deploy [dir]            Publish configured project
   yeet project deploy <name> <dir>     Publish without yeet.json
   yeet project deploy --preview        Publish to https://<name>-preview.preview.tinyfat.dev/
+  yeet project rollback [name] [id]    Redeploy a previous rollback-ready version
+  yeet project promote [name] [id]     Promote a preview deploy to the canonical URL
   yeet project ls                      List TinyFat site projects
   yeet project info [name]             Site details + deploy history
 

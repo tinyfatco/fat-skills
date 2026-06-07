@@ -81,6 +81,29 @@ yeet project info my-business
 ```
 
 `info` shows the production URL, preview URL, state, and recent deploys.
+Rows marked `rollback-ready` can be redeployed or promoted.
+
+## Rollback and Promote Deploys
+
+Use `info` first when the user asks to restore an earlier version:
+
+```bash
+yeet project info my-business
+yeet project rollback my-business <deployment-id>
+```
+
+If you omit the deployment id, `rollback` chooses the most recent previous
+rollback-ready deploy.
+
+Preview deploys can be promoted to the canonical project URL:
+
+```bash
+yeet project promote my-business <preview-deployment-id>
+```
+
+Only deploys created after bundle retention shipped are rollback-ready. Older
+history rows stay inspectable but cannot be safely restored without redeploying
+the source.
 
 ## Legacy Cloudflare Pages
 

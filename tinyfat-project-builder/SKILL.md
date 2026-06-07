@@ -79,8 +79,11 @@ is the review artifact.
 - If `yeet project deploy` fails, read the error, fix the source or project
   setup, and retry.
 - If verification fails, do not claim the deploy worked.
-- If rollback is needed, say that deploy history exists but full self-service
-  rollback may need operator help until the rollback slice ships.
+- If rollback is needed, run `yeet project info <slug>` and look for a
+  `rollback-ready` deployment. Use `yeet project rollback <slug> <deployment-id>`
+  to restore it, then verify the returned URL.
+- If only `history-only` rows exist, say the older deploys predate bundle
+  retention and cannot be safely restored without rebuilding/redeploying source.
 
 ## Product Boundary
 
