@@ -8,6 +8,7 @@ Platform skills for TinyFat agents. Cloned into container images at build time a
 |-------|-------------|
 | `browser-tools` | Headless Chrome automation — navigate, screenshot, evaluate JS, extract content |
 | `display-previews` | Workspace canvas display projects and live app preview guidance |
+| `gog` | Google Workspace CLI for Gmail, Calendar, Drive, Contacts, Sheets, Docs, and Slides |
 | `pdf-gen` | Generate PDFs from HTML using Chromium headless print-to-PDF |
 
 ## Usage
