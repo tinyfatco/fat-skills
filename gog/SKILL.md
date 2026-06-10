@@ -58,6 +58,37 @@ gog gmail send --to person@example.com --subject "Subject" --body-file ./message
 gog gmail send --to person@example.com --subject "Re: Subject" --body-file ./reply.txt --reply-to-message-id <msgId>
 ```
 
+Gmail body formatting:
+
+For Gmail drafts and sends, prefer minimal HTML passed through `--body-html`
+when formatting matters. Keep the output as close to native Gmail composition
+as possible:
+
+- Do not use a layout wrapper, max-width container, table shell, custom font
+  stack, fixed font size, custom line-height, or artificial body spacing.
+- Use `body { margin:0; padding:0; }` to avoid an extra gap above the first
+  line.
+- Use paragraphs with `margin:0 0 1em 0;` so the first paragraph has no top
+  margin and each paragraph keeps natural spacing after it.
+- Prefer `1em` spacing over fixed pixels so spacing scales with the email
+  client's default text size.
+
+Example:
+
+```bash
+cat > message.html <<'EOF'
+<!doctype html>
+<html>
+<body style="margin:0; padding:0;">
+<p style="margin:0 0 1em 0;">Hi Alex,</p>
+<p style="margin:0 0 1em 0;">Thanks for sending this over. I drafted the reply in Gmail.</p>
+<p style="margin:0 0 1em 0;">Best,<br>Alex's AI agent</p>
+</body>
+</html>
+EOF
+gog gmail drafts create --to person@example.com --subject "Subject" --body-html "$(cat ./message.html)"
+```
+
 Calendar:
 
 ```bash
