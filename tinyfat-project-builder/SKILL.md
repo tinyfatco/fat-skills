@@ -37,6 +37,17 @@ are implementation details unless the user asks for them.
    - Keep assets inside `site/` unless there is a strong reason not to.
    - If using a framework, build it to static files and place/copy the output
      into `site/` before deploying.
+   - If the project needs persistent data, key-value state, or user uploads,
+     provision resources before the deploy that needs them:
+
+     ```bash
+     yeet project resources add d1
+     yeet project resources add kv
+     yeet project resources add r2
+     ```
+
+     The default runtime bindings are `env.DB`, `env.SESSION`, and `env.MEDIA`.
+     Static brochure sites do not need resources.
 5. Deploy the canonical review preview:
 
    ```bash

@@ -46,6 +46,7 @@ const PROJECT_KIND_SITE = "site";
 const PROJECT_KIND_PAGES = "legacy-pages";
 const PROJECT_NAME_MAX = 55;
 const PREVIEW_APEX = "preview.tinyfat.dev";
+const SITE_RESOURCE_TYPES = new Set(["d1", "kv", "r2"]);
 const DATA_DIR = process.env.YEET_DATA_DIR || "/data";
 const PROJECTS_ROOT = process.env.YEET_PROJECTS_DIR || (
   fs.existsSync(DATA_DIR) ? path.join(DATA_DIR, "projects") : path.join(process.cwd(), "projects")
@@ -283,6 +284,10 @@ async function deploySiteProject(projectName, dir, environment = "production") {
     console.log(`\nPublished: ${res.data.url}`);
     if (res.data.site) console.log(`Project:   ${res.data.site}`);
     if (res.data.namespace) console.log(`Namespace: ${res.data.namespace}`);
+    if (Array.isArray(res.data.bindings)) {
+      const bindings = res.data.bindings.map((binding) => binding.name).filter(Boolean);
+      if (bindings.length > 0) console.log(`Bindings:  ${bindings.join(", ")}`);
+    }
     return;
   }
 
@@ -437,6 +442,137 @@ async function projectEnv(args) {
     console.error("Usage: yeet project env <project> set|rm|ls [KEY] [VALUE]");
     process.exit(1);
   }
+}
+
+// -- project resources ---------------------------------------
+
+function projectResourcesUsage() {
+  console.error("Usage: yeet project resources ls [project]");
+  console.error("Usage: yeet project resources add <type> [binding] [--shared|--preview|--production]");
+  console.error("Usage: yeet project resources add <project> <type> [binding] [--shared|--preview|--production]");
+  console.error("Types: d1, kv, r2. Default bindings: DB, SESSION, MEDIA.");
+}
+
+function siteResourceEnvironment(flags) {
+  const selected = ["--shared", "--preview", "--production"].filter((flag) => flags.has(flag));
+  if (selected.length > 1) {
+    console.error("Error: choose only one of --shared, --preview, or --production");
+    process.exit(1);
+  }
+  if (flags.has("--preview")) return "preview";
+  if (flags.has("--production")) return "production";
+  return "shared";
+}
+
+function isSiteResourceType(value) {
+  return SITE_RESOURCE_TYPES.has(String(value || "").toLowerCase());
+}
+
+function resolveResourceProjectName(value) {
+  const config = readProjectConfig();
+  const projectName = value || config?.name;
+  if (!projectName) {
+    projectResourcesUsage();
+    console.error("First run: yeet project init <name>");
+    process.exit(1);
+  }
+  return cleanProjectName(projectName);
+}
+
+function resolveResourceAdd(positional) {
+  const config = readProjectConfig();
+  const values = positional.slice(1);
+  let projectName;
+  let type;
+  let binding;
+
+  if (config?.name && isSiteResourceType(values[0])) {
+    projectName = config.name;
+    type = values[0];
+    binding = values[1];
+  } else if (values.length >= 2) {
+    projectName = values[0];
+    type = values[1];
+    binding = values[2];
+  }
+
+  if (!projectName || !type || !isSiteResourceType(type)) {
+    projectResourcesUsage();
+    process.exit(1);
+  }
+
+  return {
+    projectName: cleanProjectName(projectName),
+    type: String(type).toLowerCase(),
+    binding,
+  };
+}
+
+function printSiteResources(projectName, resources) {
+  if (resources.length === 0) {
+    console.log(`No resources on ${projectName}. Add one with: yeet project resources add d1`);
+    return;
+  }
+
+  console.log(`Resources for ${projectName}:`);
+  console.log("  binding     type  environment  state         cloudflare name");
+  for (const resource of resources) {
+    const binding = String(resource.binding || "-").padEnd(10);
+    const type = String(resource.type || "-").padEnd(4);
+    const environment = String(resource.environment || "shared").padEnd(12);
+    const state = String(resource.state || "-").padEnd(13);
+    const cfName = resource.cfName || resource.cf_name || "-";
+    console.log(`  ${binding}  ${type}  ${environment} ${state} ${cfName}`);
+  }
+}
+
+async function projectResources(args) {
+  const { flags, positional } = splitFlags(args);
+  const action = positional[0];
+  if (!action) {
+    projectResourcesUsage();
+    process.exit(1);
+  }
+
+  if (action === "ls" || action === "list") {
+    const projectName = resolveResourceProjectName(positional[1]);
+    const res = await api(`${SITES_PUBLISH_URL}/${encodeURIComponent(projectName)}/resources`);
+    if (!res.ok) {
+      console.error("Error:", res.data.error || res.data);
+      process.exit(1);
+    }
+    printSiteResources(projectName, res.data.resources || []);
+    return;
+  }
+
+  if (action === "add") {
+    const { projectName, type, binding } = resolveResourceAdd(positional);
+    const environment = siteResourceEnvironment(flags);
+    const body = { type, environment };
+    if (binding) body.binding = binding;
+
+    const res = await api(`${SITES_PUBLISH_URL}/${encodeURIComponent(projectName)}/resources`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      console.error("Error:", res.data.error || res.data);
+      process.exit(1);
+    }
+
+    const resource = res.data.resource || {};
+    const status = res.data.created === false ? "Already active" : "Provisioned";
+    console.log(`${status}: ${resource.type || type} ${resource.binding || binding || ""}`.trim());
+    if (resource.environment) console.log(`Environment: ${resource.environment}`);
+    if (resource.cfName) console.log(`Resource:    ${resource.cfName}`);
+    console.log("Deploy again to attach the binding to the Worker.");
+    return;
+  }
+
+  projectResourcesUsage();
+  process.exit(1);
 }
 
 // -- project init/use/list/info --------------------------------
@@ -773,7 +909,7 @@ async function projectRm(args) {
 
 async function projectCmd(args) {
   if (args.length === 0) {
-    console.error("Usage: yeet project <init|use|ls|info|deploy|rollback|promote|env|rm> [args]");
+    console.error("Usage: yeet project <init|use|ls|info|deploy|rollback|promote|resources|env|rm> [args]");
     process.exit(1);
   }
   const sub = args[0];
@@ -794,6 +930,8 @@ async function projectCmd(args) {
       return projectRollback(rest);
     case "promote":
       return projectPromote(rest);
+    case "resources":
+      return projectResources(rest);
     case "env":
       return projectEnv(rest);
     case "rm":
@@ -1014,6 +1152,10 @@ Site Projects:
   yeet project deploy --preview        Publish to https://<name>-preview.preview.tinyfat.dev/
   yeet project rollback [name] [id]    Redeploy a previous rollback-ready version
   yeet project promote [name] [id]     Promote a preview deploy to the canonical URL
+  yeet project resources add d1        Provision DB and bind it as env.DB
+  yeet project resources add kv CACHE  Provision KV with a custom binding
+  yeet project resources add r2 MEDIA  Provision R2 bucket storage
+  yeet project resources ls [name]     List project resource bindings
   yeet project ls                      List TinyFat site projects
   yeet project info [name]             Site details + deploy history
 

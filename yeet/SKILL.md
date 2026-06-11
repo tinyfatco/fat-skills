@@ -83,6 +83,32 @@ yeet project info my-business
 `info` shows the production URL, preview URL, state, and recent deploys.
 Rows marked `rollback-ready` can be redeployed or promoted.
 
+## Site Resources
+
+TinyFat site projects can provision Cloudflare resources and attach them to the
+Workers for Platforms user Worker on the next deploy.
+
+```bash
+yeet project resources add d1
+yeet project resources add kv
+yeet project resources add r2
+yeet project resources ls
+yeet project deploy
+```
+
+Default bindings are `env.DB` for D1, `env.SESSION` for KV, and `env.MEDIA` for
+R2. Use a custom binding when the code expects a different name:
+
+```bash
+yeet project resources add kv CACHE
+yeet project resources add r2 UPLOADS
+```
+
+Resources are `shared` by default, so they attach to both canonical and preview
+deploys. Use `--preview` or `--production` only when the user needs separate
+data stores for each deploy target. After adding a resource, redeploy before
+expecting the binding to exist in the Worker runtime.
+
 ## Rollback and Promote Deploys
 
 Use `info` first when the user asks to restore an earlier version:
