@@ -83,6 +83,34 @@ yeet project info my-business
 `info` shows the production URL, preview URL, state, and recent deploys.
 Rows marked `rollback-ready` can be redeployed or promoted.
 
+## Website Form Behavior
+
+Static site forms can post to TinyFat's built-in form ingress:
+
+```html
+<form method="post" action="/__tinyfat/form">
+  <input name="name" autocomplete="name">
+  <input name="email" type="email" autocomplete="email">
+  <textarea name="message"></textarea>
+  <button type="submit">Send</button>
+</form>
+```
+
+By default, submissions are saved and routed to the agent. Use `yeet project
+form` to inspect or change what happens after ingress:
+
+```bash
+yeet project form
+yeet project form --no-run-agent --notify-owner
+yeet project form --notify-email client@example.com --subject "New lead from {site}"
+yeet project form --run-agent
+```
+
+Use `--no-run-agent` when the form should only save and notify instead of
+starting an agent turn. Use `--notify-owner` to email the site owner from the
+agent's TinyFat email domain. Extra recipients can be added with repeated
+`--notify-email EMAIL` flags.
+
 ## Site Resources
 
 TinyFat site projects can provision Cloudflare resources and attach them to the

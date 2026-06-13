@@ -575,6 +575,143 @@ async function projectResources(args) {
   process.exit(1);
 }
 
+// -- project form ------------------------------------------------
+
+function projectFormUsage() {
+  console.error("Usage: yeet project form [project]");
+  console.error("Usage: yeet project form [project] [--run-agent|--no-run-agent] [--save|--no-save]");
+  console.error("                         [--notify-owner|--no-notify-owner] [--notify-email EMAIL]");
+  console.error("                         [--subject TEXT] [--reply-to-visitor|--no-reply-to-visitor]");
+}
+
+function requireFlagValue(args, index, flag) {
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) {
+    console.error(`Error: ${flag} requires a value`);
+    projectFormUsage();
+    process.exit(1);
+  }
+  return value;
+}
+
+function parseProjectFormArgs(args) {
+  const config = readProjectConfig();
+  let projectName = null;
+  let showOnly = false;
+  const patch = {};
+  const notify = {};
+  const notifyEmails = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    switch (arg) {
+      case "--show":
+        showOnly = true;
+        break;
+      case "--run-agent":
+        patch.runAgent = true;
+        break;
+      case "--no-run-agent":
+        patch.runAgent = false;
+        break;
+      case "--save":
+      case "--save-submission":
+        patch.saveSubmission = true;
+        break;
+      case "--no-save":
+      case "--no-save-submission":
+        patch.saveSubmission = false;
+        break;
+      case "--notify-owner":
+        notify.emailOwner = true;
+        break;
+      case "--no-notify-owner":
+        notify.emailOwner = false;
+        break;
+      case "--reply-to-visitor":
+        notify.replyToVisitor = true;
+        break;
+      case "--no-reply-to-visitor":
+        notify.replyToVisitor = false;
+        break;
+      case "--notify-email":
+      case "--to":
+        notifyEmails.push(requireFlagValue(args, i, arg));
+        i++;
+        break;
+      case "--clear-notify-emails":
+        notify.to = [];
+        break;
+      case "--subject":
+        notify.subject = requireFlagValue(args, i, arg);
+        i++;
+        break;
+      default:
+        if (arg.startsWith("--")) {
+          console.error(`Unknown form option: ${arg}`);
+          projectFormUsage();
+          process.exit(1);
+        }
+        if (projectName) {
+          console.error(`Unexpected argument: ${arg}`);
+          projectFormUsage();
+          process.exit(1);
+        }
+        projectName = arg;
+    }
+  }
+
+  if (notifyEmails.length > 0) notify.to = notifyEmails;
+  if (Object.keys(notify).length > 0) patch.notify = notify;
+
+  const resolvedProjectName = projectName || config?.name;
+  if (!resolvedProjectName) {
+    projectFormUsage();
+    console.error("First run: yeet project init <name>");
+    process.exit(1);
+  }
+
+  return {
+    projectName: cleanProjectName(resolvedProjectName),
+    patch,
+    showOnly,
+  };
+}
+
+function printProjectFormBehavior(projectName, behavior) {
+  const notify = behavior?.notify || {};
+  const recipients = Array.isArray(notify.to) && notify.to.length > 0
+    ? notify.to.join(", ")
+    : "-";
+  console.log(`Form behavior for ${projectName}:`);
+  console.log(`  Save submissions: ${behavior?.saveSubmission === false ? "no" : "yes"}`);
+  console.log(`  Notify owner:     ${notify.emailOwner ? "yes" : "no"}`);
+  console.log(`  Notify emails:    ${recipients}`);
+  console.log(`  Reply-to visitor: ${notify.replyToVisitor === false ? "no" : "yes"}`);
+  console.log(`  Run agent:        ${behavior?.runAgent === false ? "no" : "yes"}`);
+  if (notify.subject) console.log(`  Subject:          ${notify.subject}`);
+}
+
+async function projectForm(args) {
+  const { projectName, patch, showOnly } = parseProjectFormArgs(args);
+  const hasPatch = Object.keys(patch).length > 0;
+  const url = `${SITES_PUBLISH_URL}/${encodeURIComponent(projectName)}/form`;
+  const res = await api(url, hasPatch && !showOnly
+    ? {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }
+    : {});
+
+  if (!res.ok) {
+    console.error("Error:", res.data.error || res.data);
+    process.exit(1);
+  }
+
+  printProjectFormBehavior(res.data.site || projectName, res.data.behavior || {});
+}
+
 // -- project init/use/list/info --------------------------------
 
 function projectUse(args) {
@@ -909,7 +1046,7 @@ async function projectRm(args) {
 
 async function projectCmd(args) {
   if (args.length === 0) {
-    console.error("Usage: yeet project <init|use|ls|info|deploy|rollback|promote|resources|env|rm> [args]");
+    console.error("Usage: yeet project <init|use|ls|info|deploy|rollback|promote|resources|form|env|rm> [args]");
     process.exit(1);
   }
   const sub = args[0];
@@ -932,6 +1069,8 @@ async function projectCmd(args) {
       return projectPromote(rest);
     case "resources":
       return projectResources(rest);
+    case "form":
+      return projectForm(rest);
     case "env":
       return projectEnv(rest);
     case "rm":
@@ -1156,6 +1295,9 @@ Site Projects:
   yeet project resources add kv CACHE  Provision KV with a custom binding
   yeet project resources add r2 MEDIA  Provision R2 bucket storage
   yeet project resources ls [name]     List project resource bindings
+  yeet project form [name]             Show form webhook behavior
+  yeet project form --no-run-agent     Save/notify without waking the agent
+  yeet project form --notify-owner     Email the site owner on submission
   yeet project ls                      List TinyFat site projects
   yeet project info [name]             Site details + deploy history
 
