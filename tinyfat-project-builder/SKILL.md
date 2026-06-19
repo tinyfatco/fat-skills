@@ -101,3 +101,29 @@ is the review artifact.
 Do not make sales/support chat, CRM automation, phone/email adapters, or custom
 domain launch prerequisites for building the website. Those attach after the
 TinyFat Website project loop works.
+
+## Flight Runtime Notes
+
+Some TinyFat website agents run in Flight instead of the full container. In that
+runtime, the durable workspace is `/workspace`, not `/data`, and file upload may
+come from either the dashboard or inbound email attachments.
+
+Use the Flight capability contract as the source of truth. If the current turn
+lists these tools:
+
+- `upload_site_content`: upload an inline string or `/workspace` file into a
+  site's R2 content binding. Email attachments and dashboard uploads are already
+  persisted under paths such as `/workspace/attachments/email/...` or
+  `/workspace/uploads/...`; pass those paths as `source_path`.
+- `set_site_binding`: provision or reuse R2, D1, or KV resources before a site
+  deploy needs them. The normal content binding is `MEDIA`.
+- `deploy_site`: publish the current `/workspace` site. Use `mode: "worker"` for
+  real framework runtimes such as Payload/OpenNext or EmDash.
+- `browser_content`: inspect public pages through TinyFat's remote browser API.
+  It cannot access localhost, private networks, or a user's logged-in browser.
+
+Uploading content does not automatically place it on a page. If the user asks to
+position a file, update the site source to reference
+`/__tinyfat/content/<key>`, then deploy the site. On messages-only channels such
+as email, remember that ordinary assistant text is internal and user-visible
+delivery requires `send_message` when it is listed.
