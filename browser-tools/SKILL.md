@@ -77,7 +77,13 @@ browser-search.js "query terms" -n 3 --content
 
 ```bash
 browser-pdf.js https://example.com /tmp/example.pdf
+browser-pdf.js --html-file resume.html /tmp/resume.pdf
+browser-pdf.js /data/display/projects/report/index.html /tmp/report.pdf
 ```
+
+HTML file rendering reads the file from the agent workspace through TinyFat's
+R2-backed workspace path. Use workspace-relative paths such as `resume.html` or
+absolute `/data/...` paths. It does not expose the file as a public URL.
 
 ## Cookies
 
@@ -89,4 +95,8 @@ Prints `document.cookie`; HttpOnly cookies are not exposed.
 
 ## Current Limits
 
-Remote browser tools can load public `http` and `https` URLs. They cannot access an agent container's `localhost` or private network addresses. Stateful sessions preserve a Browser Rendering tab for short workflows, but they are not a visible live-view browser. `browser-pick.js` is reserved for a future interactive slice.
+Remote browser tools can load public `http` and `https` URLs. PDF rendering can
+also load HTML files from the agent workspace by path. They cannot access an
+agent container's `localhost` or private network addresses. Stateful sessions
+preserve a Browser Rendering tab for short workflows, but they are not a visible
+live-view browser. `browser-pick.js` is reserved for a future interactive slice.
